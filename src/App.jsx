@@ -767,8 +767,8 @@ const SignUpForm = ({ onBack, onSubmit }) => {
 // LOGIN PAGE
 // ============================================================
 const LoginPage = ({ type, onLogin, onBack, onSignUp, onSendLink }) => {
-  const [email, setEmail] = useState(type === "admin" ? "owen@owenslawn.com" : "ron@example.com");
-  const [pass, setPass] = useState("password");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleLogin = () => {
@@ -3210,79 +3210,7 @@ const SendMeLinkModal = ({ onClose }) => {
 
 // ============================================================
 // ROOT APP — token detection & routing
-// ============================================================
-// ============================================================
-// DEMO TOKEN PANEL — floating corner widget for testing
-// ============================================================
-const DemoTokenPanel = ({ onTokenLogin }) => {
-  const [open, setOpen] = useState(false);
-  const [token, setToken] = useState("rc7f2a9b");
-  const [err, setErr] = useState(false);
 
-  const handleTry = () => {
-    if (MAGIC_TOKENS[token]) {
-      setErr(false);
-      onTokenLogin(token);
-    } else {
-      setErr(true);
-    }
-  };
-
-  return (
-    <div className="fixed bottom-5 right-5 z-50" style={{ fontFamily: "'Georgia', serif" }}>
-      {open && (
-        <div className="bg-stone-900 border border-emerald-800/60 rounded-2xl p-5 mb-3 w-80 shadow-2xl">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Magic Link Demo</span>
-            </div>
-            <button onClick={() => setOpen(false)} className="text-stone-600 hover:text-stone-400"><Icon name="x" size={14} /></button>
-          </div>
-          <p className="text-stone-500 text-xs mb-4 leading-relaxed">
-            Simulate a customer clicking their magic link. Paste a token (from the email/portal) to auto-login as that customer.
-          </p>
-          <div className="mb-3">
-            <label className="block text-xs text-stone-600 mb-1.5 uppercase tracking-wider">Token</label>
-            <input
-              value={token}
-              onChange={e => { setToken(e.target.value.trim()); setErr(false); }}
-              className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-600 transition-colors"
-              placeholder="e.g. rc7f2a9b"
-            />
-            {err && <p className="text-red-400 text-xs mt-1">Invalid token — check the CRM for valid tokens.</p>}
-          </div>
-          <div className="space-y-1.5 mb-4">
-            <div className="text-xs text-stone-600 uppercase tracking-wider mb-2">Quick pick:</div>
-            {CUSTOMERS.filter(c => c.email).map(c => (
-              <button
-                key={c.id}
-                onClick={() => { setToken(c.token); setErr(false); }}
-                className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs transition-all ${token === c.token ? "bg-emerald-900/40 border border-emerald-700/60 text-emerald-300" : "bg-stone-800 text-stone-400 hover:bg-stone-700"}`}
-              >
-                <span>{c.name}</span>
-                <span className="font-mono text-stone-600">{c.token}</span>
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={handleTry}
-            className="w-full bg-emerald-700 hover:bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2"
-          >
-            <Icon name="arrow" size={14} /> Simulate Magic Link Login
-          </button>
-        </div>
-      )}
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="bg-emerald-800 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-2xl text-xs font-bold shadow-xl flex items-center gap-2 transition-all border border-emerald-600/50"
-      >
-        <Icon name="sparkle" size={14} color="#6ee7b7" />
-        {open ? "Close Demo" : "Test Magic Link"}
-      </button>
-    </div>
-  );
-};
 
 // ============================================================
 // ANNUAL PLANS PAGE
@@ -3633,8 +3561,6 @@ export default function App() {
             onPortalLogin={(type) => setView(type === "admin" ? "adminLogin" : "customerLogin")}
             onAnnualPlans={() => setView("annual-plans")}
           />
-          {/* DEV DEMO PANEL — shows in corner for testing */}
-          <DemoTokenPanel onTokenLogin={handleTokenLogin} />
         </>
       )}
       {view === "annual-plans" && (
@@ -3649,7 +3575,6 @@ export default function App() {
             onSignUp={() => setView("signup")}
             onSendLink={() => setShowSendLink(true)}
           />
-          <DemoTokenPanel onTokenLogin={handleTokenLogin} />
         </>
       )}
       {view === "adminLogin" && (
