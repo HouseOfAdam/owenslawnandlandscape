@@ -1418,7 +1418,7 @@ const scheduleChangeRequests = [
 // ============================================================
 // CRM TAB COMPONENT
 // ============================================================
-const CRMTab = ({ newLeads }) => {
+const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [] }) => {
   const [crmView, setCrmView] = useState("customers"); // customers | season-open | season-close | changes
   const [selectedCustomers, setSelectedCustomers] = useState(CUSTOMERS.map(c => c.id));
   const [sendMode, setSendMode] = useState("both"); // email | text | both
@@ -1515,7 +1515,7 @@ Owen's Lawn + Landscape
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-extrabold">Customer CRM</h1>
-          <p className="text-stone-500 text-sm">{CUSTOMERS.length} active · <span className="text-amber-400 font-semibold">{newLeads.length} new lead{newLeads.length !== 1 ? "s" : ""}</span></p>
+          <p className="text-stone-500 text-sm">{CUSTOMERS.length + convertedLeadIds.length} active · <span className="text-amber-400 font-semibold">{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length} new lead{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length !== 1 ? "s" : ""}</span></p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setCrmView("changes")} className="relative flex items-center gap-2 border border-amber-700/60 hover:bg-amber-900/20 text-amber-400 px-4 py-2 rounded-xl text-sm font-semibold transition-all">
@@ -1536,15 +1536,15 @@ Owen's Lawn + Landscape
       </div>
 
       {/* New Leads */}
-      {newLeads.length > 0 && (
+      {newLeads.filter(l => !convertedLeadIds.includes(l.id)).length > 0 && (
         <div className="mb-7">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
             <h2 className="font-bold text-amber-400 text-sm uppercase tracking-wider">New Sign-Up Leads</h2>
-            <Badge color="yellow">{newLeads.length} pending</Badge>
+            <Badge color="yellow">{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length} pending</Badge>
           </div>
           <div className="space-y-3">
-            {newLeads.map((lead, i) => (
+            {newLeads.filter(lead => !convertedLeadIds.includes(lead.id)).map((lead, i) => (
               <div key={lead.id} className="bg-amber-950/20 border border-amber-800/40 rounded-2xl p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3">
@@ -1568,8 +1568,11 @@ Owen's Lawn + Landscape
                     <a href={`mailto:${lead.email}`} className="text-xs bg-stone-700/40 hover:bg-stone-700 text-stone-300 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
                       <Icon name="mail" size={11} /> Email
                     </a>
-                    <button className="text-xs border border-stone-700 hover:border-emerald-600 text-stone-500 hover:text-emerald-400 px-3 py-1.5 rounded-lg transition-all">
-                      Convert → Client
+                    <button
+                      onClick={() => convertLead(lead.id)}
+                      className="text-xs bg-emerald-700/30 hover:bg-emerald-700/60 border border-emerald-700/50 text-emerald-400 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
+                    >
+                      <Icon name="check" size={11} /> Convert → Client
                     </button>
                   </div>
                 </div>
@@ -2598,6 +2601,11 @@ const AdminPortal = ({ onLogout }) => {
   const [adminInvoices, setAdminInvoices] = useState(INITIAL_ADMIN_INVOICES);
   const [markPaidModal, setMarkPaidModal] = useState(null); // invoice object
   const [markPaidMethod, setMarkPaidMethod] = useState("Cash");
+  const [convertedLeadIds, setConvertedLeadIds] = useState([]);
+
+  const convertLead = (leadId) => {
+    setConvertedLeadIds(prev => [...prev, leadId]);
+  };
 
   const markInvoicePaid = (invoiceId, method) => {
     setAdminInvoices(prev => prev.map(inv =>
@@ -2799,7 +2807,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         )}
 
         {/* CRM */}
-        {tab === "crm" && <CRMTab newLeads={newLeads} />}
+        {tab === "crm" && <CRMTab newLeads={newLeads} convertLead={convertLead} convertedLeadIds={convertedLeadIds} />}
 
         {/* SCHEDULE */}
         {/* ── PAYMENTS TAB ── */}
