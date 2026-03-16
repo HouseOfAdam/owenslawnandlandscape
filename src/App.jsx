@@ -2014,20 +2014,66 @@ Owen's Lawn + Landscape
                     </div>
                   </td>
                   <td className="py-3 px-4 text-stone-400">{c.service}</td>
-                  <td className="py-3 px-4 text-emerald-400 font-bold">${c.price}</td>
-                  <td className="py-3 px-4"><Badge color={c.frequency === "Weekly" ? "green" : c.frequency === "Biweekly" ? "blue" : "gray"}>{c.frequency}</Badge></td>
-                  <td className="py-3 px-4 text-stone-400 text-xs">{c.route_day || routeDay(c.id)}</td>
+                  <td className="py-3 px-4">
+                    {editingCustomerId === c.id ? (
+                      <input type="number" step="0.01" value={editCustomerFields.price ?? c.price}
+                        onChange={e => setEditCustomerFields(p => ({...p, price: e.target.value}))}
+                        className="w-20 bg-stone-800 border border-emerald-600 rounded-lg px-2 py-1 text-sm text-emerald-400 font-bold focus:outline-none" />
+                    ) : (
+                      <span className="text-emerald-400 font-bold cursor-pointer hover:underline" onClick={() => { setEditingCustomerId(c.id); setEditCustomerFields({ price: c.price, frequency: c.frequency, route_day: c.route_day }); }}>${c.price}</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    {editingCustomerId === c.id ? (
+                      <select value={editCustomerFields.frequency ?? c.frequency}
+                        onChange={e => setEditCustomerFields(p => ({...p, frequency: e.target.value}))}
+                        className="bg-stone-800 border border-emerald-600 rounded-lg px-2 py-1 text-sm text-stone-200 focus:outline-none">
+                        {["Weekly","Biweekly","Occasional","Monthly"].map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    ) : (
+                      <Badge color={c.frequency === "Weekly" ? "green" : c.frequency === "Biweekly" ? "blue" : "gray"}>{c.frequency}</Badge>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    {editingCustomerId === c.id ? (
+                      <select value={editCustomerFields.route_day ?? c.route_day ?? ""}
+                        onChange={e => setEditCustomerFields(p => ({...p, route_day: e.target.value}))}
+                        className="bg-stone-800 border border-emerald-600 rounded-lg px-2 py-1 text-sm text-stone-200 focus:outline-none">
+                        {["Monday","Tuesday","Wednesday","Thursday","Friday"].map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    ) : (
+                      <span className="text-stone-400 text-xs">{c.route_day || routeDay(c.id)}</span>
+                    )}
+                  </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-1.5">
                       <span className="font-mono text-[10px] text-emerald-500/80 bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-900/40 truncate max-w-[120px]">?token={c.token}</span>
                       <button
-                        onClick={() => navigator.clipboard?.writeText(`owenslawnlandscape.com/portal?token=${c.token}`)}
+                        onClick={() => navigator.clipboard?.writeText(`${window.location.origin}?token=${c.token}`)}
                         className="text-stone-600 hover:text-emerald-400 transition-colors shrink-0" title="Copy link">
                         <Icon name="share" size={12} />
                       </button>
                     </div>
                   </td>
-                  <td className="py-3 px-4"><Badge color="green">{c.status}</Badge></td>
+                  <td className="py-3 px-4">
+                    {editingCustomerId === c.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={async () => {
+                          const updates = {};
+                          if (editCustomerFields.price !== undefined) updates.price = Number(editCustomerFields.price);
+                          if (editCustomerFields.frequency) updates.frequency = editCustomerFields.frequency;
+                          if (editCustomerFields.route_day) updates.route_day = editCustomerFields.route_day;
+                          await db.updateCustomer(c.id, updates);
+                          setEditingCustomerId(null);
+                          setEditCustomerFields({});
+                          if (onRefreshCustomers) onRefreshCustomers();
+                        }} className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-lg font-semibold transition-all">Save</button>
+                        <button onClick={() => { setEditingCustomerId(null); setEditCustomerFields({}); }} className="text-xs text-stone-500 hover:text-stone-300 px-2 py-1 transition-colors">Cancel</button>
+                      </div>
+                    ) : (
+                      <Badge color="green">{c.status}</Badge>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -3041,19 +3087,86 @@ const AdminPortal = ({ onLogout }) => {
     setMarkPaidModal(null);
   };
 
-  const months = ["Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov"];
-  const rev = [120,1545,1160,600,1085,2760,1498.6,1573.7,380];
-  const exp = [150,1661.3,772.77,464.35,1172.27,584.03,288.61,664.04,0];
-  const maxVal = Math.max(...rev, ...exp);
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  // ── 2025 Archived Season Data ─────────────────────────────
+  const season2025 = {
+    months: ["Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov"],
+    rev: [120,1545,1160,600,1085,2760,1498.6,1573.7,380],
+    exp: [150,1661.3,772.77,464.35,1172.27,584.03,288.61,664.04,0],
+    totalRevenue: 11032.3,
+    totalExpenses: 5757.37,
+    netProfit: 5274.93,
+    incomeBreakdown: [
+      { category: "Lawncare Income", amount: 5755.49 },
+      { category: "Turf Maintenance Income", amount: 1229 },
+      { category: "Landscape Installation", amount: 2600 },
+      { category: "Landscape Maintenance", amount: 707.81 },
+      { category: "Other Income", amount: 740 },
+    ],
+    expenseBreakdown: [
+      { category: "Equipment", amount: 1848.76 },
+      { category: "Automobile Fuel", amount: 1166.87 },
+      { category: "Materials", amount: 970.07 },
+      { category: "Insurance", amount: 450 },
+      { category: "Wages", amount: 800 },
+      { category: "Equipment Maintenance", amount: 238 },
+      { category: "Auto Maintenance", amount: 105.74 },
+      { category: "Meals", amount: 132.93 },
+      { category: "Contract Labor", amount: 45 },
+    ],
+    topClients: [
+      { name: "Ronnie Whittemore", amount: 2497.32, service: "Landscaping" },
+      { name: "Kyle Lemon", amount: 480, service: "Mowing" },
+      { name: "Dave Mauer", amount: 300, service: "Mowing" },
+      { name: "Ron Cooper", amount: 270, service: "Mowing" },
+    ],
+  };
+
+  // ── 2026 Expense Tracking State ───────────────────────────
+  const [expenses, setExpenses] = useState([]);
+  const [showAddExpense, setShowAddExpense] = useState(false);
+  const [newExpense, setNewExpense] = useState({ date: new Date().toISOString().slice(0,10), category: "Equipment", description: "", amount: "" });
+  const expenseCategories = ["Equipment","Automobile Fuel","Materials","Insurance","Wages","Equipment Maintenance","Auto Maintenance","Meals","Contract Labor","Marketing","Other"];
+
+  // ── 2026 Revenue (computed from customer data) ────────────
+  const monthlyRevenue2026 = months.map((m, i) => {
+    // Only count months that have started (Mar = month 2 onward for lawn season)
+    const now = new Date();
+    const monthDate = new Date(2026, i, 1);
+    if (monthDate > now) return 0;
+    // Simple estimate: sum of weekly customers * 4 + biweekly * 2 for active months
+    if (i < 2 || i > 10) return 0; // off-season Jan, Feb, Dec
+    return customers.reduce((sum, c) => {
+      if (c.status !== "Active") return sum;
+      const visits = (c.frequency === "Weekly") ? 4 : (c.frequency === "Biweekly") ? 2 : 1;
+      return sum + (c.price * visits);
+    }, 0);
+  });
+  const totalRevenue2026 = monthlyRevenue2026.reduce((a,b) => a+b, 0);
+  const monthlyExpenses2026 = months.map((m, i) => {
+    return expenses.filter(e => new Date(e.date).getMonth() === i).reduce((sum, e) => sum + Number(e.amount), 0);
+  });
+  const totalExpenses2026 = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+  const netProfit2026 = totalRevenue2026 - totalExpenses2026;
+  const maxVal2026 = Math.max(...monthlyRevenue2026, ...monthlyExpenses2026, 1);
+
+  // ── Dashboard Season Toggle ───────────────────────────────
+  const [dashboardSeason, setDashboardSeason] = useState("2026");
+
+  // ── Customer Rate Editing ─────────────────────────────────
+  const [editingCustomerId, setEditingCustomerId] = useState(null);
+  const [editCustomerFields, setEditCustomerFields] = useState({});
 
   const tabs = [
     { id: "dashboard",  label: "Dashboard",            icon: "chart" },
     { id: "crm",        label: "CRM",                  icon: "users" },
     { id: "payments",   label: "Payments",             icon: "dollar" },
+    { id: "expenses",   label: "Expense Tracker",      icon: "clipboard" },
     { id: "schedule",   label: "Schedule & Routes",    icon: "map" },
     { id: "estimator",  label: "AI Estimator",         icon: "sparkle" },
     { id: "materials",  label: "Materials & Equipment",icon: "package" },
-    { id: "financials", label: "Financials",           icon: "dollar" },
+    { id: "prior",      label: "Prior Seasons",        icon: "calendar" },
   ];
 
   const generateEstimate = async () => {
@@ -3157,26 +3270,26 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h1 className="text-2xl font-extrabold">Business Dashboard</h1>
-                <p className="text-stone-500 text-sm">2025 Season Overview — Year 1 Complete</p>
+                <p className="text-stone-500 text-sm">2026 Season — Year 2</p>
               </div>
-              <Badge color="green">Season Complete ✓</Badge>
+              <Badge color="emerald">Active Season</Badge>
             </div>
             <div className="grid grid-cols-4 gap-4 mb-6">
-              <StatCard label="Total Revenue" value="$11,032" sub="2025 Season" icon="dollar" color="emerald" trend="+Year over Year" />
-              <StatCard label="Net Profit" value="$5,275" sub="47.8% margin" icon="chart" color="blue" />
-              <StatCard label="Active Clients" value="9" sub="Retained from Y1" icon="users" color="amber" />
-              <StatCard label="Y2 Goal" value="30" sub="Clients target" icon="trending" color="emerald" />
+              <StatCard label="Revenue" value={`$${totalRevenue2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="dollar" color="emerald" />
+              <StatCard label="Expenses" value={`$${totalExpenses2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="alert" color="red" />
+              <StatCard label="Net Profit" value={`$${netProfit2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub={totalRevenue2026 > 0 ? `${((netProfit2026/totalRevenue2026)*100).toFixed(1)}% margin` : "—"} icon="chart" color="blue" />
+              <StatCard label="Active Clients" value={`${customers.filter(c=>c.status==="Active").length}`} sub={`of ${customers.length} total`} icon="users" color="amber" />
             </div>
 
-            {/* Revenue Chart */}
+            {/* Revenue vs Expenses Chart */}
             <Card className="mb-5">
-              <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="chart" size={16} color="#34d399" /> 2025 Monthly Revenue vs. Expenses</h3>
+              <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="chart" size={16} color="#34d399" /> 2026 Monthly Revenue vs. Expenses</h3>
               <div className="flex items-end gap-2 h-40">
                 {months.map((m, i) => (
                   <div key={m} className="flex-1 flex flex-col items-center gap-1">
                     <div className="w-full flex gap-0.5 items-end" style={{ height: "120px" }}>
-                      <div className="flex-1 bg-emerald-700/70 rounded-t" style={{ height: `${(rev[i]/maxVal)*120}px` }} title={`Revenue $${rev[i]}`} />
-                      <div className="flex-1 bg-red-900/70 rounded-t" style={{ height: `${(exp[i]/maxVal)*120}px` }} title={`Expenses $${exp[i]}`} />
+                      <div className="flex-1 bg-emerald-700/70 rounded-t" style={{ height: `${maxVal2026 > 0 ? (monthlyRevenue2026[i]/maxVal2026)*120 : 0}px` }} title={`Revenue $${monthlyRevenue2026[i].toFixed(0)}`} />
+                      <div className="flex-1 bg-red-900/70 rounded-t" style={{ height: `${maxVal2026 > 0 ? (monthlyExpenses2026[i]/maxVal2026)*120 : 0}px` }} title={`Expenses $${monthlyExpenses2026[i].toFixed(0)}`} />
                     </div>
                     <div className="text-[10px] text-stone-600">{m}</div>
                   </div>
@@ -3193,10 +3306,10 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                 <h3 className="font-bold mb-3 flex items-center gap-2"><Icon name="alert" size={16} color="#f59e0b" /> Action Items</h3>
                 <div className="space-y-2">
                   {[
-                    { text: "Year 2 launch — target 21 new clients", color: "amber" },
-                    { text: "Review Q1 pricing strategy", color: "blue" },
-                    { text: "Send spring service reminders", color: "emerald" },
+                    { text: "Send season opener communications", color: "emerald" },
+                    { text: "Confirm returning customer rates", color: "amber" },
                     { text: "Renew liability insurance (due Apr 2026)", color: "red" },
+                    { text: "Year 2 target — 30 clients", color: "blue" },
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-2.5 bg-stone-800/50 rounded-xl px-3 py-2">
                       <div className={`w-1.5 h-1.5 rounded-full ${item.color === "amber" ? "bg-amber-400" : item.color === "blue" ? "bg-blue-400" : item.color === "red" ? "bg-red-400" : "bg-emerald-400"}`} />
@@ -3206,26 +3319,25 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                 </div>
               </Card>
               <Card>
-                <h3 className="font-bold mb-3 flex items-center gap-2"><Icon name="users" size={16} color="#34d399" /> Top Clients by Revenue</h3>
-                <div className="space-y-2">
-                  {[
-                    { name: "Ronnie Whittemore", amount: 2497.32, service: "Landscaping" },
-                    { name: "Kyle Lemon", amount: 480, service: "Mowing" },
-                    { name: "Dave Mauer", amount: 300, service: "Mowing" },
-                    { name: "Ron Cooper", amount: 270, service: "Mowing" },
-                  ].map((c, i) => (
-                    <div key={i} className="flex items-center justify-between bg-stone-800/50 rounded-xl px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-emerald-900/40 rounded-full flex items-center justify-center text-emerald-400 text-xs font-bold">{i+1}</div>
-                        <div>
-                          <div className="text-sm font-semibold">{c.name}</div>
-                          <div className="text-xs text-stone-500">{c.service}</div>
-                        </div>
-                      </div>
-                      <span className="text-emerald-400 font-bold text-sm">${c.amount.toLocaleString()}</span>
-                    </div>
-                  ))}
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold flex items-center gap-2"><Icon name="dollar" size={16} color="#f87171" /> Recent Expenses</h3>
+                  <button onClick={() => setTab("expenses")} className="text-xs text-emerald-500 hover:text-emerald-400">View all →</button>
                 </div>
+                {expenses.length === 0 ? (
+                  <p className="text-stone-600 text-sm py-4 text-center">No expenses logged yet. <button onClick={() => setTab("expenses")} className="text-emerald-500 underline">Add one →</button></p>
+                ) : (
+                  <div className="space-y-2">
+                    {expenses.slice(0, 5).map((e, i) => (
+                      <div key={i} className="flex items-center justify-between bg-stone-800/50 rounded-xl px-3 py-2">
+                        <div>
+                          <div className="text-sm font-semibold">{e.description || e.category}</div>
+                          <div className="text-xs text-stone-500">{e.category} · {e.date}</div>
+                        </div>
+                        <span className="text-red-400 font-bold text-sm">-${Number(e.amount).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </Card>
             </div>
           </div>
@@ -3470,57 +3582,216 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         )}
 
         {/* FINANCIALS */}
-        {tab === "financials" && (
+        {tab === "expenses" && (
           <div>
-            <h1 className="text-2xl font-extrabold mb-1">Financials Dashboard</h1>
-            <p className="text-stone-500 text-sm mb-6">2025 Full Season — P&L Summary</p>
-            <div className="grid grid-cols-3 gap-4 mb-5">
-              <StatCard label="Total Revenue" value="$11,032" sub="All services" icon="dollar" color="emerald" />
-              <StatCard label="Total Expenses" value="$5,757" sub="Operating costs" icon="alert" color="red" />
-              <StatCard label="Net Profit" value="$5,275" sub="47.8% margin" icon="chart" color="blue" />
-            </div>
-            <Card className="mb-5">
-              <h3 className="font-bold mb-4">Income Breakdown (2025)</h3>
-              <div className="space-y-2">
-                {[
-                  { category: "Lawncare Income", amount: 5755.49, color: "emerald" },
-                  { category: "Turf Maintenance Income", amount: 1229, color: "blue" },
-                  { category: "Landscape Installation", amount: 2600, color: "amber" },
-                  { category: "Landscape Maintenance", amount: 707.81, color: "purple" },
-                  { category: "Other Income", amount: 740, color: "stone" },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className="w-36 text-sm text-stone-400">{item.category}</div>
-                    <div className="flex-1 bg-stone-800 rounded-full h-2">
-                      <div className="bg-emerald-600 h-2 rounded-full" style={{ width: `${(item.amount/11032.3)*100}%` }} />
-                    </div>
-                    <div className="text-sm font-bold text-emerald-400 w-20 text-right">${item.amount.toLocaleString()}</div>
-                  </div>
-                ))}
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-extrabold">Expense Tracker</h1>
+                <p className="text-stone-500 text-sm">2026 Season — Log and track operating costs</p>
               </div>
-            </Card>
+              <button onClick={() => setShowAddExpense(true)} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-all">
+                + Add Expense
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <StatCard label="Total Expenses" value={`$${totalExpenses2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="alert" color="red" />
+              <StatCard label="Revenue" value={`$${totalRevenue2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="dollar" color="emerald" />
+              <StatCard label="Net Profit" value={`$${netProfit2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub={totalRevenue2026 > 0 ? `${((netProfit2026/totalRevenue2026)*100).toFixed(1)}% margin` : "—"} icon="chart" color="blue" />
+            </div>
+
+            {/* Expense breakdown by category */}
+            {expenses.length > 0 && (
+              <Card className="mb-5">
+                <h3 className="font-bold mb-4">Expense Breakdown by Category</h3>
+                <div className="space-y-2">
+                  {expenseCategories.map(cat => {
+                    const catTotal = expenses.filter(e => e.category === cat).reduce((s, e) => s + Number(e.amount), 0);
+                    if (catTotal === 0) return null;
+                    return (
+                      <div key={cat} className="flex items-center gap-3">
+                        <div className="w-44 text-sm text-stone-400 truncate">{cat}</div>
+                        <div className="flex-1 bg-stone-800 rounded-full h-1.5">
+                          <div className="bg-red-700/70 h-1.5 rounded-full" style={{ width: `${(catTotal/totalExpenses2026)*100}%` }} />
+                        </div>
+                        <div className="text-sm font-semibold text-red-400 w-20 text-right">${catTotal.toLocaleString()}</div>
+                      </div>
+                    );
+                  }).filter(Boolean)}
+                </div>
+              </Card>
+            )}
+
+            {/* Expense list */}
             <Card>
-              <h3 className="font-bold mb-4">Expense Breakdown (2025)</h3>
-              <div className="space-y-2">
-                {[
-                  { category: "Equipment", amount: 1848.76 },
-                  { category: "Automobile Fuel", amount: 1166.87 },
-                  { category: "Materials", amount: 970.07 },
-                  { category: "Insurance", amount: 450 },
-                  { category: "Wages", amount: 800 },
-                  { category: "Equipment Maintenance", amount: 238 },
-                  { category: "Auto Maintenance", amount: 105.74 },
-                  { category: "Meals", amount: 132.93 },
-                  { category: "Contract Labor", amount: 45 },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className="w-44 text-sm text-stone-400 truncate">{item.category}</div>
-                    <div className="flex-1 bg-stone-800 rounded-full h-1.5">
-                      <div className="bg-red-700/70 h-1.5 rounded-full" style={{ width: `${(item.amount/5757.37)*100}%` }} />
-                    </div>
-                    <div className="text-sm font-semibold text-red-400 w-20 text-right">${item.amount.toLocaleString()}</div>
+              <h3 className="font-bold mb-4">All Expenses</h3>
+              {expenses.length === 0 ? (
+                <p className="text-stone-600 text-sm py-8 text-center">No expenses logged yet. Click "Add Expense" to get started.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-stone-800">
+                        {["Date", "Category", "Description", "Amount", ""].map(h => (
+                          <th key={h} className="text-left py-2 px-3 text-stone-500 text-xs uppercase tracking-wider font-semibold">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-800/40">
+                      {expenses.sort((a,b) => b.date.localeCompare(a.date)).map((e, i) => (
+                        <tr key={i} className="hover:bg-stone-800/30">
+                          <td className="py-2.5 px-3 text-stone-400">{e.date}</td>
+                          <td className="py-2.5 px-3"><Badge color="gray">{e.category}</Badge></td>
+                          <td className="py-2.5 px-3 text-stone-300">{e.description}</td>
+                          <td className="py-2.5 px-3 text-red-400 font-bold">${Number(e.amount).toLocaleString()}</td>
+                          <td className="py-2.5 px-3">
+                            <button onClick={() => setExpenses(prev => prev.filter((_, idx) => idx !== i))} className="text-stone-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+
+            {/* Add Expense Modal */}
+            {showAddExpense && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-stone-900 border border-stone-700 rounded-3xl w-full max-w-md shadow-2xl">
+                  <div className="px-6 pt-6 pb-4 border-b border-stone-800 flex items-center justify-between">
+                    <h2 className="text-lg font-black">Add Expense</h2>
+                    <button onClick={() => setShowAddExpense(false)} className="text-stone-500 hover:text-stone-300"><Icon name="x" size={18} /></button>
                   </div>
-                ))}
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Date</label>
+                      <input type="date" value={newExpense.date} onChange={e => setNewExpense(p => ({...p, date: e.target.value}))}
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Category</label>
+                      <select value={newExpense.category} onChange={e => setNewExpense(p => ({...p, category: e.target.value}))}
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600">
+                        {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Description</label>
+                      <input type="text" value={newExpense.description} onChange={e => setNewExpense(p => ({...p, description: e.target.value}))} placeholder="e.g. Gas for mower"
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Amount ($)</label>
+                      <input type="number" step="0.01" value={newExpense.amount} onChange={e => setNewExpense(p => ({...p, amount: e.target.value}))} placeholder="0.00"
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                    </div>
+                    <button onClick={() => {
+                      if (newExpense.amount && Number(newExpense.amount) > 0) {
+                        setExpenses(prev => [...prev, { ...newExpense, amount: Number(newExpense.amount) }]);
+                        setNewExpense({ date: new Date().toISOString().slice(0,10), category: "Equipment", description: "", amount: "" });
+                        setShowAddExpense(false);
+                      }
+                    }} disabled={!newExpense.amount || Number(newExpense.amount) <= 0}
+                      className="w-full bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-all">
+                      Add Expense
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "prior" && (
+          <div>
+            <h1 className="text-2xl font-extrabold mb-1">Prior Seasons</h1>
+            <p className="text-stone-500 text-sm mb-6">Archived season data and P&L summaries</p>
+
+            {/* 2025 Season Archive */}
+            <Card className="mb-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold flex items-center gap-2"><Icon name="calendar" size={16} color="#34d399" /> 2025 Season — Year 1</h3>
+                <Badge color="green">Complete ✓</Badge>
+              </div>
+              <div className="grid grid-cols-3 gap-4 mb-5">
+                <StatCard label="Total Revenue" value={`$${season2025.totalRevenue.toLocaleString()}`} sub="All services" icon="dollar" color="emerald" />
+                <StatCard label="Total Expenses" value={`$${season2025.totalExpenses.toLocaleString()}`} sub="Operating costs" icon="alert" color="red" />
+                <StatCard label="Net Profit" value={`$${season2025.netProfit.toLocaleString()}`} sub={`${((season2025.netProfit/season2025.totalRevenue)*100).toFixed(1)}% margin`} icon="chart" color="blue" />
+              </div>
+
+              {/* Revenue chart */}
+              <div className="mb-5">
+                <h4 className="text-sm font-semibold text-stone-400 mb-3">Monthly Revenue vs. Expenses</h4>
+                <div className="flex items-end gap-2 h-32">
+                  {season2025.months.map((m, i) => {
+                    const maxVal25 = Math.max(...season2025.rev, ...season2025.exp);
+                    return (
+                      <div key={m} className="flex-1 flex flex-col items-center gap-1">
+                        <div className="w-full flex gap-0.5 items-end" style={{ height: "100px" }}>
+                          <div className="flex-1 bg-emerald-700/70 rounded-t" style={{ height: `${(season2025.rev[i]/maxVal25)*100}px` }} title={`Revenue $${season2025.rev[i]}`} />
+                          <div className="flex-1 bg-red-900/70 rounded-t" style={{ height: `${(season2025.exp[i]/maxVal25)*100}px` }} title={`Expenses $${season2025.exp[i]}`} />
+                        </div>
+                        <div className="text-[10px] text-stone-600">{m}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-4 mt-2 text-xs text-stone-500">
+                  <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-emerald-700/70 rounded" /> Revenue</div>
+                  <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-red-900/70 rounded" /> Expenses</div>
+                </div>
+              </div>
+
+              {/* Income breakdown */}
+              <div className="mb-5">
+                <h4 className="text-sm font-semibold text-stone-400 mb-3">Income Breakdown</h4>
+                <div className="space-y-2">
+                  {season2025.incomeBreakdown.map((item, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <div className="w-44 text-sm text-stone-400 truncate">{item.category}</div>
+                      <div className="flex-1 bg-stone-800 rounded-full h-2">
+                        <div className="bg-emerald-600 h-2 rounded-full" style={{ width: `${(item.amount/season2025.totalRevenue)*100}%` }} />
+                      </div>
+                      <div className="text-sm font-bold text-emerald-400 w-20 text-right">${item.amount.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Expense breakdown */}
+              <div className="mb-5">
+                <h4 className="text-sm font-semibold text-stone-400 mb-3">Expense Breakdown</h4>
+                <div className="space-y-2">
+                  {season2025.expenseBreakdown.map((item, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <div className="w-44 text-sm text-stone-400 truncate">{item.category}</div>
+                      <div className="flex-1 bg-stone-800 rounded-full h-1.5">
+                        <div className="bg-red-700/70 h-1.5 rounded-full" style={{ width: `${(item.amount/season2025.totalExpenses)*100}%` }} />
+                      </div>
+                      <div className="text-sm font-semibold text-red-400 w-20 text-right">${item.amount.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top clients */}
+              <div>
+                <h4 className="text-sm font-semibold text-stone-400 mb-3">Top Clients</h4>
+                <div className="space-y-2">
+                  {season2025.topClients.map((c, i) => (
+                    <div key={i} className="flex items-center justify-between bg-stone-800/50 rounded-xl px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-emerald-900/40 rounded-full flex items-center justify-center text-emerald-400 text-xs font-bold">{i+1}</div>
+                        <div>
+                          <div className="text-sm font-semibold">{c.name}</div>
+                          <div className="text-xs text-stone-500">{c.service}</div>
+                        </div>
+                      </div>
+                      <span className="text-emerald-400 font-bold text-sm">${c.amount.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </Card>
           </div>
