@@ -1617,8 +1617,6 @@ Hi ${customer.name.split(" ")[0]},
 
 Great news — Owen's Lawn + Landscape is gearing up for the 2026 season, and we'd love to have you back!
 
-Your tentative service day is ${customer.route_day || routeDay(customer.id)}s, starting the week of March 10th.
-
 As a returning customer, you've earned:
   ✅  1 FREE mow on us this season
   ✅  15% off any additional service (landscaping, treatments, etc.)
@@ -1626,7 +1624,7 @@ As a returning customer, you've earned:
 👉 Tap below to instantly access your portal — no password needed:
 https://${magicLink(customer)}
 
-Review your schedule, confirm your day, or request a different time. We'll confirm within 24 hours.
+Log in to view your schedule, confirm your service day, or request changes. We'll confirm within 24 hours.
 
 Thanks for another year — can't wait to get your yard looking great.
 
@@ -1635,7 +1633,7 @@ Owen's Lawn + Landscape
 (317) 868-4699`;
 
   const seasonOpenText = (customer) =>
-`Hi ${customer.name.split(" ")[0]}! 👋 Owen here — 2026 season kicks off Mar 10. Your day: ${customer.route_day || routeDay(customer.id)}s. Returning customer perks: 1 FREE cut + 15% off any add-on! Tap to confirm your schedule (no login needed): https://${shortLink(customer)}`;
+`Hi ${customer.name.split(" ")[0]}! 👋 Owen here — 2026 season kicks off Mar 10. Returning customer perks: 1 FREE cut + 15% off any add-on! Log in to view your schedule and confirm: https://${shortLink(customer)}`;
 
   const seasonCloseEmail = (customer) =>
 `Subject: Thanks for a Great 2025 Season — See You in 2026! 🍂
@@ -1646,12 +1644,13 @@ As we wrap up the 2025 season, I just wanted to say thank you. It's been a privi
 
 Here's what's waiting for you in 2026:
   🌱  Priority scheduling — returning customers pick their day first
-  💰  Rate lock — your 2025 rate guaranteed for all of 2026
   🎁  1 FREE mow + 15% off any add-on when you re-enroll before Jan 15
   💵  Refer a neighbor → earn a $25 credit on your first invoice
 
 👉 Re-enroll in 60 seconds — no password, just tap:
 https://${magicLink(customer)}
+
+Log in to view your details and confirm for next season.
 
 Have a wonderful fall and winter — talk soon!
 
@@ -1660,7 +1659,7 @@ Owen's Lawn + Landscape
 (317) 868-4699`;
 
   const seasonCloseText = (customer) =>
-`Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — thanks for a great 2025! Re-enroll before Jan 15: lock in your rate, get 1 FREE cut + 15% off any add-on in 2026. Tap to secure your spot: https://${shortLink(customer)}`;
+`Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — thanks for a great 2025! Re-enroll before Jan 15: get 1 FREE cut + 15% off any add-on in 2026. Log in to confirm your spot: https://${shortLink(customer)}`;
 
   const activeCustomers = customers.filter(c => selectedCustomers.includes(c.id));
   const previewCustomer = customers[0];
