@@ -1486,6 +1486,10 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
     return map[id] || "Friday";
   };
 
+  // ── Customer Rate Editing ─────────────────────────────────
+  const [editingCustomerId, setEditingCustomerId] = useState(null);
+  const [editCustomerFields, setEditCustomerFields] = useState({});
+
   const toggleCustomer = (id) => setSelectedCustomers(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const allSelected = selectedCustomers.length === customers.length;
 
@@ -3163,10 +3167,6 @@ const AdminPortal = ({ onLogout }) => {
 
   // ── Dashboard Season Toggle ───────────────────────────────
   const [dashboardSeason, setDashboardSeason] = useState("2026");
-
-  // ── Customer Rate Editing ─────────────────────────────────
-  const [editingCustomerId, setEditingCustomerId] = useState(null);
-  const [editCustomerFields, setEditCustomerFields] = useState({});
 
   const tabs = [
     { id: "dashboard",  label: "Dashboard",            icon: "chart" },
