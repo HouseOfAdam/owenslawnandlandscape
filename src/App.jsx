@@ -1418,14 +1418,20 @@ const scheduleChangeRequests = [
 // ============================================================
 // CRM TAB COMPONENT
 // ============================================================
-const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [] }) => {
+const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUSTOMERS }) => {
   const [crmView, setCrmView] = useState("customers"); // customers | season-open | season-close | changes
-  const [selectedCustomers, setSelectedCustomers] = useState(CUSTOMERS.map(c => c.id));
+  const [selectedCustomers, setSelectedCustomers] = useState(customers.map(c => c.id));
   const [sendMode, setSendMode] = useState("both"); // email | text | both
   const [sentStatus, setSentStatus] = useState(null); // null | "sending" | "sent"
   const [openMsgType, setOpenMsgType] = useState("email"); // email | text  (for season-open preview toggle)
   const [closeMsgType, setCloseMsgType] = useState("email");
   const [changeRequests, setChangeRequests] = useState(scheduleChangeRequests);
+
+  // Auto-select newly added customers
+  useEffect(() => {
+    const newIds = customers.map(c => c.id).filter(id => !selectedCustomers.includes(id));
+    if (newIds.length > 0) setSelectedCustomers(prev => [...prev, ...newIds]);
+  }, [customers.length]);
 
   // Editable message overrides (null = use generated template)
   const [editedOpenEmail, setEditedOpenEmail] = useState(null);
@@ -1440,7 +1446,7 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [] }) => {
   };
 
   const toggleCustomer = (id) => setSelectedCustomers(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
-  const allSelected = selectedCustomers.length === CUSTOMERS.length;
+  const allSelected = selectedCustomers.length === customers.length;
 
   const handleSend = () => {
     setSentStatus("sending");
@@ -1504,8 +1510,8 @@ Owen's Lawn + Landscape
   const seasonCloseText = (customer) =>
 `Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — thanks for a great 2025! Re-enroll before Jan 15: lock in your rate, get 1 FREE cut + 15% off any add-on in 2026. Tap to secure your spot: https://${shortLink(customer)}`;
 
-  const activeCustomers = CUSTOMERS.filter(c => selectedCustomers.includes(c.id));
-  const previewCustomer = CUSTOMERS[0];
+  const activeCustomers = customers.filter(c => selectedCustomers.includes(c.id));
+  const previewCustomer = customers[0];
 
   // ── SUB-VIEWS ─────────────────────────────────────────────
 
@@ -1515,7 +1521,7 @@ Owen's Lawn + Landscape
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-extrabold">Customer CRM</h1>
-          <p className="text-stone-500 text-sm">{CUSTOMERS.length + convertedLeadIds.length} active · <span className="text-amber-400 font-semibold">{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length} new lead{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length !== 1 ? "s" : ""}</span></p>
+          <p className="text-stone-500 text-sm">{customers.length} active · <span className="text-amber-400 font-semibold">{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length} new lead{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length !== 1 ? "s" : ""}</span></p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setCrmView("changes")} className="relative flex items-center gap-2 border border-amber-700/60 hover:bg-amber-900/20 text-amber-400 px-4 py-2 rounded-xl text-sm font-semibold transition-all">
@@ -1602,7 +1608,7 @@ Owen's Lawn + Landscape
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/40">
-              {CUSTOMERS.map(c => (
+              {customers.map(c => (
                 <tr key={c.id} className="hover:bg-stone-800/30 transition-colors">
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2.5">
@@ -1720,14 +1726,14 @@ Owen's Lawn + Landscape
             <Card>
               <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="users" size={15} color="#34d399" /> Recipients</h3>
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-stone-500">{selectedCustomers.length} of {CUSTOMERS.length} selected</span>
-                <button onClick={() => setSelectedCustomers(allSelected ? [] : CUSTOMERS.map(c=>c.id))}
+                <span className="text-xs text-stone-500">{selectedCustomers.length} of {customers.length} selected</span>
+                <button onClick={() => setSelectedCustomers(allSelected ? [] : customers.map(c=>c.id))}
                   className="text-xs text-emerald-500 hover:text-emerald-400 transition-colors">
                   {allSelected ? "Deselect all" : "Select all"}
                 </button>
               </div>
               <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {CUSTOMERS.map(c => (
+                {customers.map(c => (
                   <label key={c.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-all ${selectedCustomers.includes(c.id) ? "bg-emerald-900/20 border border-emerald-800/40" : "bg-stone-800/40 border border-transparent hover:border-stone-700"}`}>
                     <input type="checkbox" checked={selectedCustomers.includes(c.id)} onChange={() => toggleCustomer(c.id)} className="accent-emerald-500" />
                     <div className="flex-1 min-w-0">
@@ -1750,7 +1756,7 @@ Owen's Lawn + Landscape
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-stone-600 mt-3">⚠ Customers without email addresses will receive text only. {CUSTOMERS.filter(c=>!c.email).length} customers missing email.</p>
+              <p className="text-xs text-stone-600 mt-3">⚠ Customers without email addresses will receive text only. {customers.filter(c=>!c.email).length} customers missing email.</p>
             </Card>
 
             <button onClick={handleSend} disabled={selectedCustomers.length === 0 || sentStatus === "sending"}
@@ -1853,11 +1859,11 @@ Owen's Lawn + Landscape
             <Card>
               <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="users" size={15} color="#34d399" /> Recipients</h3>
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-stone-500">{selectedCustomers.length} of {CUSTOMERS.length} selected</span>
-                <button onClick={() => setSelectedCustomers(allSelected ? [] : CUSTOMERS.map(c=>c.id))} className="text-xs text-emerald-500 hover:text-emerald-400">{allSelected ? "Deselect all" : "Select all"}</button>
+                <span className="text-xs text-stone-500">{selectedCustomers.length} of {customers.length} selected</span>
+                <button onClick={() => setSelectedCustomers(allSelected ? [] : customers.map(c=>c.id))} className="text-xs text-emerald-500 hover:text-emerald-400">{allSelected ? "Deselect all" : "Select all"}</button>
               </div>
               <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {CUSTOMERS.map(c => (
+                {customers.map(c => (
                   <label key={c.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-all ${selectedCustomers.includes(c.id) ? "bg-emerald-900/20 border border-emerald-800/40" : "bg-stone-800/40 border border-transparent hover:border-stone-700"}`}>
                     <input type="checkbox" checked={selectedCustomers.includes(c.id)} onChange={() => toggleCustomer(c.id)} className="accent-emerald-500" />
                     <div className="flex-1 min-w-0">
@@ -2602,9 +2608,31 @@ const AdminPortal = ({ onLogout }) => {
   const [markPaidModal, setMarkPaidModal] = useState(null); // invoice object
   const [markPaidMethod, setMarkPaidMethod] = useState("Cash");
   const [convertedLeadIds, setConvertedLeadIds] = useState([]);
+  const [customers, setCustomers] = useState(CUSTOMERS);
 
   const convertLead = (leadId) => {
     setConvertedLeadIds(prev => [...prev, leadId]);
+    const lead = newLeads.find(l => l.id === leadId);
+    if (lead) {
+      const newId = Math.max(...customers.map(c => c.id), 0) + 1;
+      const tokenBase = (lead.name || "xx").toLowerCase().replace(/[^a-z]/g,"").slice(0,2) + Math.random().toString(36).slice(2,8);
+      const refCode = (lead.name || "NEW").split(" ")[0].toUpperCase().slice(0,4) + "2026";
+      const newCustomer = {
+        id: newId,
+        name: lead.name,
+        email: lead.email || "",
+        phone: lead.phone || "",
+        address: lead.address || "",
+        service: lead.serviceType || "Mowing",
+        price: 0,
+        frequency: lead.frequency || "Weekly",
+        status: "Active",
+        balance: 0,
+        referralCode: refCode,
+        token: tokenBase,
+      };
+      setCustomers(prev => [...prev, newCustomer]);
+    }
   };
 
   const markInvoicePaid = (invoiceId, method) => {
@@ -2807,7 +2835,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         )}
 
         {/* CRM */}
-        {tab === "crm" && <CRMTab newLeads={newLeads} convertLead={convertLead} convertedLeadIds={convertedLeadIds} />}
+        {tab === "crm" && <CRMTab newLeads={newLeads} convertLead={convertLead} convertedLeadIds={convertedLeadIds} customers={customers} />}
 
         {/* SCHEDULE */}
         {/* ── PAYMENTS TAB ── */}
