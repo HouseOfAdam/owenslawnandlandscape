@@ -2972,7 +2972,6 @@ const AdminPortal = ({ onLogout }) => {
   const [adminInvoices, setAdminInvoices] = useState(INITIAL_ADMIN_INVOICES);
   const [markPaidModal, setMarkPaidModal] = useState(null); // invoice object
   const [markPaidMethod, setMarkPaidMethod] = useState("Cash");
-  const [convertedLeadIds, setConvertedLeadIds] = useState([]);
   // Load customers from Supabase (fall back to hardcoded seed data when offline)
   const [customers, setCustomers] = useState(CUSTOMERS);
 
@@ -3201,7 +3200,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         )}
 
         {/* CRM */}
-        {tab === "crm" && <CRMTab newLeads={newLeads} convertLead={convertLead} convertedLeadIds={convertedLeadIds} customers={customers} onRefreshCustomers={refreshCustomers} onNavigateEstimator={handleNavigateEstimator} />}
+        {tab === "crm" && <CRMTab newLeads={newLeads} customers={customers} onRefreshCustomers={refreshCustomers} onNavigateEstimator={handleNavigateEstimator} />}
 
         {/* SCHEDULE */}
         {/* ── PAYMENTS TAB ── */}
