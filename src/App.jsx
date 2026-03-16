@@ -3048,9 +3048,10 @@ const AdminPaymentsTab = ({ adminInvoices, setMarkPaidModal, setMarkPaidMethod }
 
 const AdminPortal = ({ onLogout }) => {
   const [tab, setTab] = useState("dashboard");
-  const [estimateForm, setEstimateForm] = useState({ customer: "", service: "mowing", area: 5000, frequency: "weekly", notes: "" });
+  const [estimateForm, setEstimateForm] = useState({ customer: "", service: "mowing", area: 5000, frequency: "weekly", notes: "", leadId: null });
   const [aiEstimate, setAiEstimate] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [savedEstimates, setSavedEstimates] = useState([]);
   const [adminInvoices, setAdminInvoices] = useState(INITIAL_ADMIN_INVOICES);
   const [markPaidModal, setMarkPaidModal] = useState(null); // invoice object
   const [markPaidMethod, setMarkPaidMethod] = useState("Cash");
@@ -3068,17 +3069,26 @@ const AdminPortal = ({ onLogout }) => {
   }, [refreshCustomers]);
 
   // Navigate to estimator tab pre-filled with lead data
-  const handleNavigateEstimator = useCallback((leadData) => {
+  const handleNavigateEstimator = useCallback(async (leadData) => {
     if (leadData) {
       setEstimateForm(prev => ({
         ...prev,
-        customer: leadData.name || prev.customer,
-        service: leadData.serviceType || leadData.service_type || prev.service,
-        area: leadData.lotSize || leadData.lot_size || prev.area,
+        customer: leadData.name || leadData.customer || prev.customer,
+        service: leadData.serviceType || leadData.service_type || leadData.service || prev.service,
+        area: leadData.lotSize || leadData.lot_size || leadData.area || prev.area,
         frequency: leadData.frequency || prev.frequency,
         notes: leadData.notes || prev.notes,
+        leadId: leadData.leadId || null,
       }));
+      // Load saved estimates for this lead
+      if (leadData.leadId && isOnline()) {
+        const { data } = await supabase.from("estimates").select("*").eq("lead_id", leadData.leadId).order("created_at", { ascending: false });
+        setSavedEstimates(data || []);
+      } else {
+        setSavedEstimates([]);
+      }
     }
+    setAiEstimate(null);
     setTab("estimator");
   }, []);
 
@@ -3516,9 +3526,20 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                     </Card>
                     <Card>
                       <p className="text-xs text-stone-500 italic">{aiEstimate.competitiveNote}</p>
-                      <button className="mt-3 w-full bg-stone-800 hover:bg-stone-700 text-stone-300 py-2.5 rounded-xl text-sm font-semibold transition-all">
-                        Generate PDF Estimate →
-                      </button>
+                      {estimateForm.leadId && (
+                        <button onClick={async () => {
+                          const saved = await db.saveEstimate(estimateForm.leadId, aiEstimate);
+                          if (saved) {
+                            setSavedEstimates(prev => [saved, ...prev]);
+                            setAiEstimate(null);
+                          }
+                        }} className="mt-3 w-full bg-emerald-700 hover:bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-bold transition-all">
+                          Save Estimate to Lead →
+                        </button>
+                      )}
+                      {!estimateForm.leadId && (
+                        <p className="mt-3 text-xs text-stone-600 text-center">Navigate here from a lead in the CRM to save estimates to their record.</p>
+                      )}
                     </Card>
                   </div>
                 )}
@@ -3527,6 +3548,48 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                     <div className="text-center text-stone-600">
                       <Icon name="sparkle" size={32} color="#374151" />
                       <p className="mt-2 text-sm">Fill in the form and generate<br />your AI-powered estimate</p>
+                    </div>
+                  </Card>
+                )}
+
+                {/* Saved Estimate History */}
+                {savedEstimates.length > 0 && (
+                  <Card className="mt-4">
+                    <h3 className="font-bold mb-3 flex items-center gap-2"><Icon name="clipboard" size={15} color="#34d399" /> Estimate History ({savedEstimates.length})</h3>
+                    <div className="space-y-3">
+                      {savedEstimates.map((est, i) => (
+                        <div key={est.id || i} className="bg-stone-800/50 rounded-xl p-3 border border-stone-700/50">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs text-stone-500">{new Date(est.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+                            <Badge color="green">Margin: {est.profit_margin}</Badge>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 mb-2">
+                            <div className="text-center">
+                              <div className="text-lg font-bold text-emerald-400">${est.base_price}</div>
+                              <div className="text-[10px] text-stone-500">Per Visit</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-lg font-bold text-emerald-400">${est.monthly_estimate}</div>
+                              <div className="text-[10px] text-stone-500">Monthly</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-lg font-bold text-emerald-400">${est.annual_estimate?.toLocaleString()}</div>
+                              <div className="text-[10px] text-stone-500">Annual</div>
+                            </div>
+                          </div>
+                          {est.line_items && est.line_items.length > 0 && (
+                            <div className="space-y-1 mb-2">
+                              {est.line_items.map((item, j) => (
+                                <div key={j} className="flex justify-between text-xs bg-stone-900/50 rounded-lg px-2 py-1">
+                                  <span className="text-stone-400">{item.description}</span>
+                                  <span className="text-emerald-400">{item.amount > 0 ? `$${item.amount}` : "Included"}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {est.recommendation && <p className="text-xs text-amber-300 bg-amber-900/20 rounded-lg px-2 py-1">💡 {est.recommendation}</p>}
+                        </div>
+                      ))}
                     </div>
                   </Card>
                 )}
