@@ -1489,9 +1489,42 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
   const toggleCustomer = (id) => setSelectedCustomers(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const allSelected = selectedCustomers.length === customers.length;
 
-  const handleSend = () => {
+  const handleSend = async () => {
     setSentStatus("sending");
-    setTimeout(() => setSentStatus("sent"), 1800);
+    try {
+      // Build recipients list with personalized messages
+      const recipients = customers
+        .filter(c => selectedCustomers.includes(c.id))
+        .map(c => ({
+          name: c.name,
+          email: c.email || "",
+          phone: c.phone || "",
+          message_email: crmView === "season-open" ? seasonOpenEmail(c) : seasonCloseEmail(c),
+          message_text: crmView === "season-open" ? seasonOpenText(c) : seasonCloseText(c),
+        }));
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const res = await fetch(`${supabaseUrl}/functions/v1/send-communications`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ recipients, send_mode: sendMode }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        setSentStatus("sent");
+      } else {
+        console.error("Send failed:", result);
+        setSentStatus(null);
+      }
+    } catch (err) {
+      console.error("handleSend error:", err);
+      setSentStatus(null);
+    }
   };
 
   const magicLink = (customer) => `owenslawnlandscape.com/portal?token=${customer.token}`;
