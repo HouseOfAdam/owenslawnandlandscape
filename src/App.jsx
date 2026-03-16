@@ -1527,8 +1527,8 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
     }
   };
 
-  const magicLink = (customer) => `owenslawnlandscape.com/portal?token=${customer.token}`;
-  const shortLink = (customer) => `owensll.com/${customer.token.slice(0,6)}`;
+  const magicLink = (customer) => `${window.location.origin}?token=${customer.token}`;
+  const shortLink = (customer) => `${window.location.origin}?token=${customer.token}`;
 
   // ── Lead Actions ────────────────────────────────────────────
   const handleStatusChange = async (lead, newStatus) => {
@@ -1622,7 +1622,7 @@ As a returning customer, you've earned:
   ✅  15% off any additional service (landscaping, treatments, etc.)
 
 👉 Tap below to instantly access your portal — no password needed:
-https://${magicLink(customer)}
+${magicLink(customer)}
 
 Log in to view your schedule, confirm your service day, or request changes. We'll confirm within 24 hours.
 
@@ -1633,7 +1633,7 @@ Owen's Lawn + Landscape
 (317) 868-4699`;
 
   const seasonOpenText = (customer) =>
-`Hi ${customer.name.split(" ")[0]}! 👋 Owen here — 2026 season kicks off Mar 10. Returning customer perks: 1 FREE cut + 15% off any add-on! Log in to view your schedule and confirm: https://${shortLink(customer)}`;
+`Hi ${customer.name.split(" ")[0]}! 👋 Owen here — 2026 season kicks off Mar 10. Returning customer perks: 1 FREE cut + 15% off any add-on! Log in to view your schedule and confirm: ${shortLink(customer)}`;
 
   const seasonCloseEmail = (customer) =>
 `Subject: Thanks for a Great 2025 Season — See You in 2026! 🍂
@@ -1648,7 +1648,7 @@ Here's what's waiting for you in 2026:
   💵  Refer a neighbor → earn a $25 credit on your first invoice
 
 👉 Re-enroll in 60 seconds — no password, just tap:
-https://${magicLink(customer)}
+${magicLink(customer)}
 
 Log in to view your details and confirm for next season.
 
@@ -1659,7 +1659,7 @@ Owen's Lawn + Landscape
 (317) 868-4699`;
 
   const seasonCloseText = (customer) =>
-`Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — thanks for a great 2025! Re-enroll before Jan 15: get 1 FREE cut + 15% off any add-on in 2026. Log in to confirm your spot: https://${shortLink(customer)}`;
+`Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — thanks for a great 2025! Re-enroll before Jan 15: get 1 FREE cut + 15% off any add-on in 2026. Log in to confirm your spot: ${shortLink(customer)}`;
 
   const activeCustomers = customers.filter(c => selectedCustomers.includes(c.id));
   const previewCustomer = customers[0];
@@ -3970,20 +3970,17 @@ const AnnualPlansPage = ({ onBack, onGetStarted }) => {
 };
 
 export default function App() {
-  // Simulate URL params — in production this reads window.location.search
-  // To demo: change DEMO_TOKEN to any token from MAGIC_TOKENS above
-  const DEMO_TOKEN = "rc7f2a9b"; // ← Ron Cooper's magic link token (DEMO)
-
   const [view, setView] = useState("landing");
   const [authedCustomer, setAuthedCustomer] = useState(null);
   const [showSendLink, setShowSendLink] = useState(false);
 
-  // Simulate token detection on mount (mirrors real URL param check)
+  // Check URL for magic link token on mount
   useEffect(() => {
-    // In production: const params = new URLSearchParams(window.location.search);
-    //                const token = params.get("token");
-    // For demo, we check if a token is "in the URL" via DEMO_TOKEN
-    // The demo panel below lets you test any token interactively
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    if (token) {
+      handleTokenLogin(token);
+    }
   }, []);
 
   const handleTokenLogin = async (token) => {
