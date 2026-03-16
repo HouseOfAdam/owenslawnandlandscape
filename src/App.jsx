@@ -3129,6 +3129,16 @@ const AdminPortal = ({ onLogout }) => {
   const [newExpense, setNewExpense] = useState({ date: new Date().toISOString().slice(0,10), category: "Equipment", description: "", amount: "" });
   const expenseCategories = ["Equipment","Automobile Fuel","Materials","Insurance","Wages","Equipment Maintenance","Auto Maintenance","Meals","Contract Labor","Marketing","Other"];
 
+  // Load expenses from Supabase on mount
+  const refreshExpenses = useCallback(async () => {
+    const data = await db.fetchExpenses();
+    if (data && data.length > 0) setExpenses(data);
+  }, []);
+
+  useEffect(() => {
+    refreshExpenses();
+  }, [refreshExpenses]);
+
   // ── 2026 Revenue (computed from customer data) ────────────
   const monthlyRevenue2026 = months.map((m, i) => {
     // Only count months that have started (Mar = month 2 onward for lawn season)
@@ -3645,7 +3655,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                           <td className="py-2.5 px-3 text-stone-300">{e.description}</td>
                           <td className="py-2.5 px-3 text-red-400 font-bold">${Number(e.amount).toLocaleString()}</td>
                           <td className="py-2.5 px-3">
-                            <button onClick={() => setExpenses(prev => prev.filter((_, idx) => idx !== i))} className="text-stone-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                            <button onClick={async () => { await db.deleteExpense(e.id); await refreshExpenses(); }} className="text-stone-600 hover:text-red-400 text-xs transition-colors">Remove</button>
                           </td>
                         </tr>
                       ))}
@@ -3686,9 +3696,14 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                       <input type="number" step="0.01" value={newExpense.amount} onChange={e => setNewExpense(p => ({...p, amount: e.target.value}))} placeholder="0.00"
                         className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
                     </div>
-                    <button onClick={() => {
+                    <button onClick={async () => {
                       if (newExpense.amount && Number(newExpense.amount) > 0) {
-                        setExpenses(prev => [...prev, { ...newExpense, amount: Number(newExpense.amount) }]);
+                        const saved = await db.createExpense(newExpense);
+                        if (saved) {
+                          await refreshExpenses();
+                        } else {
+                          setExpenses(prev => [...prev, { ...newExpense, id: Date.now(), amount: Number(newExpense.amount) }]);
+                        }
                         setNewExpense({ date: new Date().toISOString().slice(0,10), category: "Equipment", description: "", amount: "" });
                         setShowAddExpense(false);
                       }

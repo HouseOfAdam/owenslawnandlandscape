@@ -199,3 +199,43 @@ export async function saveEstimate(leadId, estimateData) {
 
   return data;
 }
+
+// ============================================================
+// EXPENSES
+// ============================================================
+
+export async function fetchExpenses() {
+  if (!isOnline()) return [];
+  const { data, error } = await supabase
+    .from("expenses")
+    .select("*")
+    .order("date", { ascending: false });
+  if (error) { console.error("fetchExpenses:", error); return []; }
+  return data;
+}
+
+export async function createExpense(expense) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase
+    .from("expenses")
+    .insert([{
+      date: expense.date,
+      category: expense.category,
+      description: expense.description || "",
+      amount: Number(expense.amount),
+    }])
+    .select()
+    .single();
+  if (error) { console.error("createExpense:", error); return null; }
+  return data;
+}
+
+export async function deleteExpense(id) {
+  if (!isOnline()) return null;
+  const { error } = await supabase
+    .from("expenses")
+    .delete()
+    .eq("id", id);
+  if (error) { console.error("deleteExpense:", error); return null; }
+  return true;
+}
