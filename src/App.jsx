@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { supabase, isOnline } from "./lib/supabase";
+import * as db from "./lib/db";
 
 // Google Fonts — Inter (loaded via style injection)
 const _injectFonts = (() => {
@@ -286,8 +288,18 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", address: "", service: "", message: "" });
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setSubmitted(true);
+    // Persist lead to Supabase
+    await db.createLead({
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      address: formData.address,
+      serviceType: formData.service,
+      notes: formData.message,
+      source: "website",
+    });
     setTimeout(() => { setEstimateOpen(false); setSubmitted(false); }, 2000);
   };
 
@@ -566,9 +578,11 @@ const SignUpForm = ({ onBack, onSubmit }) => {
 
   const up = (field, val) => setForm(f => ({ ...f, [field]: val }));
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const lead = { ...form, id: Date.now(), submittedAt: new Date().toLocaleDateString(), status: "New Lead" };
     newLeads.unshift(lead);
+    // Persist to Supabase
+    await db.createLead({ ...form, source: "signup_form" });
     setSubmitted(true);
   };
 
@@ -770,10 +784,17 @@ const LoginPage = ({ type, onLogin, onBack, onSignUp, onSendLink }) => {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setLoading(true);
-    setTimeout(() => { setLoading(false); onLogin(); }, 800);
+    setError("");
+    try {
+      await onLogin(email, pass);
+    } catch (e) {
+      setError(e.message || "Login failed. Please try again.");
+    }
+    setLoading(false);
   };
 
   const lInput = "w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors";
@@ -804,6 +825,7 @@ const LoginPage = ({ type, onLogin, onBack, onSignUp, onSendLink }) => {
               className="w-full disabled:opacity-50 text-white py-3.5 rounded-xl font-bold transition-all mt-2 hover:opacity-90" style={{ background: "#1a4a2e" }}>
               {loading ? "Signing in..." : "Sign In"}
             </button>
+            {error && <p className="text-red-600 text-xs text-center mt-2">{error}</p>}
           </div>
           {type === "customer" && (
             <div className="mt-6 pt-6 border-t border-[#e8e2da] space-y-3">
@@ -1418,14 +1440,24 @@ const scheduleChangeRequests = [
 // ============================================================
 // CRM TAB COMPONENT
 // ============================================================
-const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUSTOMERS }) => {
-  const [crmView, setCrmView] = useState("customers"); // customers | season-open | season-close | changes
+const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUSTOMERS, onRefreshCustomers, onNavigateEstimator }) => {
+  const [crmView, setCrmView] = useState("customers"); // customers | leads | lead-detail | season-open | season-close | changes
   const [selectedCustomers, setSelectedCustomers] = useState(customers.map(c => c.id));
   const [sendMode, setSendMode] = useState("both"); // email | text | both
   const [sentStatus, setSentStatus] = useState(null); // null | "sending" | "sent"
-  const [openMsgType, setOpenMsgType] = useState("email"); // email | text  (for season-open preview toggle)
+  const [openMsgType, setOpenMsgType] = useState("email");
   const [closeMsgType, setCloseMsgType] = useState("email");
   const [changeRequests, setChangeRequests] = useState(scheduleChangeRequests);
+
+  // ── Lead state (from Supabase) ──────────────────────────────
+  const [dbLeads, setDbLeads] = useState([]);
+  const [leadsLoading, setLeadsLoading] = useState(true);
+  const [selectedLead, setSelectedLead] = useState(null);
+  const [editingLead, setEditingLead] = useState(null); // lead object being edited
+  const [noteText, setNoteText] = useState("");
+  const [noteType, setNoteType] = useState("note");
+  const [leadFilter, setLeadFilter] = useState("all"); // all | new | contacted | estimate_sent | converted | archived
+  const [confirmArchive, setConfirmArchive] = useState(null); // lead id
 
   // Auto-select newly added customers
   useEffect(() => {
@@ -1433,13 +1465,22 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
     if (newIds.length > 0) setSelectedCustomers(prev => [...prev, ...newIds]);
   }, [customers.length]);
 
+  // Load leads from Supabase
+  const loadLeads = useCallback(async () => {
+    setLeadsLoading(true);
+    const leads = await db.fetchLeads();
+    setDbLeads(leads);
+    setLeadsLoading(false);
+  }, []);
+
+  useEffect(() => { loadLeads(); }, [loadLeads]);
+
   // Editable message overrides (null = use generated template)
   const [editedOpenEmail, setEditedOpenEmail] = useState(null);
   const [editedOpenText, setEditedOpenText] = useState(null);
   const [editedCloseEmail, setEditedCloseEmail] = useState(null);
   const [editedCloseText, setEditedCloseText] = useState(null);
 
-  // Pre-assigned route days (Thu/Fri/Sat priority Mar-May)
   const routeDay = (id) => {
     const map = { 1:"Monday", 2:"Friday", 3:"Monday", 4:"Thursday", 5:"Friday", 6:"Friday", 7:"Friday", 8:"Monday", 9:"Monday" };
     return map[id] || "Friday";
@@ -1456,8 +1497,86 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
   const magicLink = (customer) => `owenslawnlandscape.com/portal?token=${customer.token}`;
   const shortLink = (customer) => `owensll.com/${customer.token.slice(0,6)}`;
 
-  // ── Message Templates ──────────────────────────────────────
+  // ── Lead Actions ────────────────────────────────────────────
+  const handleStatusChange = async (lead, newStatus) => {
+    await db.updateLead(lead.id, { status: newStatus });
+    await db.addLeadNote(lead.id, `Status changed to ${newStatus}`, "status_change");
+    loadLeads();
+  };
 
+  const handleConvert = async (lead) => {
+    const customer = await db.convertLeadToCustomer(lead.id);
+    if (customer && onRefreshCustomers) onRefreshCustomers();
+    loadLeads();
+  };
+
+  const handleArchive = async (leadId) => {
+    await db.archiveLead(leadId);
+    setConfirmArchive(null);
+    if (selectedLead?.id === leadId) { setSelectedLead(null); setCrmView("leads"); }
+    loadLeads();
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingLead) return;
+    await db.updateLead(editingLead.id, {
+      name: editingLead.name,
+      email: editingLead.email,
+      phone: editingLead.phone,
+      address: editingLead.address,
+      service_type: editingLead.service_type,
+      frequency: editingLead.frequency,
+      lot_size: editingLead.lot_size,
+      price: editingLead.price,
+      notes: editingLead.notes,
+    });
+    setEditingLead(null);
+    loadLeads();
+    // Refresh selected lead
+    if (selectedLead?.id === editingLead.id) {
+      const leads = await db.fetchLeads();
+      setSelectedLead(leads.find(l => l.id === editingLead.id) || null);
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!noteText.trim() || !selectedLead) return;
+    await db.addLeadNote(selectedLead.id, noteText.trim(), noteType);
+    setNoteText("");
+    setNoteType("note");
+    // Refresh the selected lead's notes
+    const leads = await db.fetchLeads();
+    setDbLeads(leads);
+    setSelectedLead(leads.find(l => l.id === selectedLead.id) || null);
+  };
+
+  const handleEstimateLead = (lead) => {
+    // Navigate to estimator tab with lead data pre-filled
+    if (onNavigateEstimator) onNavigateEstimator({
+      customer: lead.name,
+      service: lead.service_type === "Mowing" ? "mowing" : lead.service_type?.toLowerCase() || "mowing",
+      area: lead.lot_size ? parseInt(lead.lot_size) || 5000 : 5000,
+      frequency: lead.frequency?.toLowerCase() || "weekly",
+      notes: lead.notes || "",
+      leadId: lead.id,
+    });
+  };
+
+  // ── Filter leads ────────────────────────────────────────────
+  const filteredLeads = dbLeads.filter(l => leadFilter === "all" ? l.status !== "archived" : l.status === leadFilter);
+  const statusCounts = {
+    all: dbLeads.filter(l => l.status !== "archived").length,
+    new: dbLeads.filter(l => l.status === "new").length,
+    contacted: dbLeads.filter(l => l.status === "contacted").length,
+    estimate_sent: dbLeads.filter(l => l.status === "estimate_sent").length,
+    converted: dbLeads.filter(l => l.status === "converted").length,
+    archived: dbLeads.filter(l => l.status === "archived").length,
+  };
+
+  const statusColor = (s) => ({ new: "yellow", contacted: "blue", estimate_sent: "emerald", converted: "green", archived: "gray" }[s] || "gray");
+  const statusLabel = (s) => ({ new: "New", contacted: "Contacted", estimate_sent: "Estimate Sent", converted: "Converted", archived: "Archived" }[s] || s);
+
+  // ── Message Templates ──────────────────────────────────────
   const seasonOpenEmail = (customer) =>
 `Subject: Welcome Back — Your 2026 Season Starts Soon! 🌿
 
@@ -1465,7 +1584,7 @@ Hi ${customer.name.split(" ")[0]},
 
 Great news — Owen's Lawn + Landscape is gearing up for the 2026 season, and we'd love to have you back!
 
-Your tentative service day is ${routeDay(customer.id)}s, starting the week of March 10th.
+Your tentative service day is ${customer.route_day || routeDay(customer.id)}s, starting the week of March 10th.
 
 As a returning customer, you've earned:
   ✅  1 FREE mow on us this season
@@ -1483,7 +1602,7 @@ Owen's Lawn + Landscape
 (317) 868-4699`;
 
   const seasonOpenText = (customer) =>
-`Hi ${customer.name.split(" ")[0]}! 👋 Owen here — 2026 season kicks off Mar 10. Your day: ${routeDay(customer.id)}s. Returning customer perks: 1 FREE cut + 15% off any add-on! Tap to confirm your schedule (no login needed): https://${shortLink(customer)}`;
+`Hi ${customer.name.split(" ")[0]}! 👋 Owen here — 2026 season kicks off Mar 10. Your day: ${customer.route_day || routeDay(customer.id)}s. Returning customer perks: 1 FREE cut + 15% off any add-on! Tap to confirm your schedule (no login needed): https://${shortLink(customer)}`;
 
   const seasonCloseEmail = (customer) =>
 `Subject: Thanks for a Great 2025 Season — See You in 2026! 🍂
@@ -1515,15 +1634,306 @@ Owen's Lawn + Landscape
 
   // ── SUB-VIEWS ─────────────────────────────────────────────
 
-  // Customers list view
+  // ── LEAD DETAIL VIEW ──────────────────────────────────────
+  if (crmView === "lead-detail" && selectedLead) {
+    const lead = selectedLead;
+    const isEditing = editingLead?.id === lead.id;
+    const e = isEditing ? editingLead : lead;
+    const notes = lead.lead_notes || [];
+
+    return (
+      <div>
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={() => { setCrmView("leads"); setEditingLead(null); }} className="text-stone-500 hover:text-stone-300 text-sm flex items-center gap-1 transition-colors">← Leads</button>
+          <span className="text-stone-700">/</span>
+          <h1 className="text-2xl font-extrabold">{lead.name}</h1>
+          <Badge color={statusColor(lead.status)}>{statusLabel(lead.status)}</Badge>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-6">
+          {/* Left: Lead details */}
+          <div className="md:col-span-2 space-y-4">
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-stone-200">Lead Details</h3>
+                <div className="flex gap-2">
+                  {!isEditing ? (
+                    <button onClick={() => setEditingLead({ ...lead })} className="text-xs bg-stone-700 hover:bg-stone-600 text-stone-300 px-3 py-1.5 rounded-lg transition-all">Edit</button>
+                  ) : (
+                    <>
+                      <button onClick={handleSaveEdit} className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg transition-all">Save</button>
+                      <button onClick={() => setEditingLead(null)} className="text-xs bg-stone-700 hover:bg-stone-600 text-stone-300 px-3 py-1.5 rounded-lg transition-all">Cancel</button>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  ["Name", "name"], ["Email", "email"], ["Phone", "phone"], ["Address", "address"],
+                  ["Service", "service_type"], ["Frequency", "frequency"], ["Lot Size", "lot_size"], ["Price", "price"],
+                ].map(([label, field]) => (
+                  <div key={field}>
+                    <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">{label}</label>
+                    {isEditing ? (
+                      <input
+                        value={e[field] || ""}
+                        onChange={ev => setEditingLead({ ...editingLead, [field]: ev.target.value })}
+                        className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-600"
+                      />
+                    ) : (
+                      <div className="text-sm text-stone-200">{lead[field] || "—"}</div>
+                    )}
+                  </div>
+                ))}
+                <div className="col-span-2">
+                  <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Notes</label>
+                  {isEditing ? (
+                    <textarea
+                      value={e.notes || ""}
+                      onChange={ev => setEditingLead({ ...editingLead, notes: ev.target.value })}
+                      rows={2}
+                      className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-600 resize-none"
+                    />
+                  ) : (
+                    <div className="text-sm text-stone-200">{lead.notes || "—"}</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 mt-4 text-xs text-stone-600">
+                <span>Source: {lead.source === "signup_form" ? "Sign-Up Form" : lead.source === "manual" ? "Manual" : "Website"}</span>
+                {lead.heard_from && <span>· Via: {lead.heard_from}</span>}
+                {lead.referral_code && <span className="text-emerald-500">· Ref: {lead.referral_code}</span>}
+                <span>· {new Date(lead.created_at).toLocaleDateString()}</span>
+              </div>
+            </Card>
+
+            {/* Actions bar */}
+            <Card>
+              <h3 className="font-bold text-stone-200 mb-3">Actions</h3>
+              <div className="flex flex-wrap gap-2">
+                <a href={`tel:${lead.phone}`} className="text-xs bg-emerald-700/30 hover:bg-emerald-700/60 text-emerald-400 px-4 py-2 rounded-lg transition-all flex items-center gap-1.5">
+                  <Icon name="phone" size={12} /> Call {lead.phone}
+                </a>
+                <a href={`mailto:${lead.email}`} className="text-xs bg-stone-700/40 hover:bg-stone-700 text-stone-300 px-4 py-2 rounded-lg transition-all flex items-center gap-1.5">
+                  <Icon name="mail" size={12} /> Email
+                </a>
+                {lead.status !== "contacted" && lead.status !== "converted" && (
+                  <button onClick={() => handleStatusChange(lead, "contacted")} className="text-xs bg-blue-700/30 hover:bg-blue-700/60 text-blue-400 px-4 py-2 rounded-lg transition-all flex items-center gap-1.5">
+                    <Icon name="phone" size={12} /> Mark Contacted
+                  </button>
+                )}
+                <button onClick={() => handleEstimateLead(lead)} className="text-xs bg-amber-700/30 hover:bg-amber-700/60 text-amber-400 px-4 py-2 rounded-lg transition-all flex items-center gap-1.5">
+                  <Icon name="sparkle" size={12} /> Generate Estimate
+                </button>
+                {lead.status !== "converted" && (
+                  <button onClick={() => handleConvert(lead)} className="text-xs bg-emerald-700/30 hover:bg-emerald-700/60 border border-emerald-700/50 text-emerald-400 px-4 py-2 rounded-lg transition-all flex items-center gap-1.5">
+                    <Icon name="check" size={12} /> Convert → Client
+                  </button>
+                )}
+                {lead.status !== "archived" && (
+                  <button onClick={() => setConfirmArchive(lead.id)} className="text-xs bg-red-900/20 hover:bg-red-900/40 text-red-400 px-4 py-2 rounded-lg transition-all flex items-center gap-1.5">
+                    <Icon name="x" size={12} /> Archive
+                  </button>
+                )}
+              </div>
+              {confirmArchive === lead.id && (
+                <div className="mt-3 bg-red-950/30 border border-red-900/40 rounded-xl p-3 flex items-center justify-between">
+                  <span className="text-sm text-red-300">Archive this lead? It can be viewed later in the Archived filter.</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleArchive(lead.id)} className="text-xs bg-red-700 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg transition-all">Archive</button>
+                    <button onClick={() => setConfirmArchive(null)} className="text-xs bg-stone-700 hover:bg-stone-600 text-stone-300 px-3 py-1.5 rounded-lg transition-all">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </Card>
+
+            {/* Activity log / notes */}
+            <Card>
+              <h3 className="font-bold text-stone-200 mb-3">Activity Log</h3>
+              {/* Add note */}
+              <div className="flex gap-2 mb-4">
+                <select value={noteType} onChange={ev => setNoteType(ev.target.value)} className="bg-stone-800 border border-stone-700 rounded-lg px-2 py-2 text-xs text-stone-300 focus:outline-none focus:border-emerald-600">
+                  <option value="note">Note</option>
+                  <option value="call">Phone Call</option>
+                  <option value="estimate">Estimate</option>
+                </select>
+                <input
+                  value={noteText}
+                  onChange={ev => setNoteText(ev.target.value)}
+                  onKeyDown={ev => ev.key === "Enter" && handleAddNote()}
+                  placeholder="Add a note or log a call..."
+                  className="flex-1 bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-emerald-600"
+                />
+                <button onClick={handleAddNote} className="bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-all">Add</button>
+              </div>
+              {/* Notes list */}
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {notes.length === 0 && <p className="text-xs text-stone-600 italic">No activity yet.</p>}
+                {notes.map(note => (
+                  <div key={note.id} className="flex items-start gap-2 text-sm">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 text-xs ${
+                      note.note_type === "call" ? "bg-blue-900/40 text-blue-400" :
+                      note.note_type === "estimate" ? "bg-amber-900/40 text-amber-400" :
+                      note.note_type === "status_change" ? "bg-purple-900/40 text-purple-400" :
+                      "bg-stone-800 text-stone-400"
+                    }`}>
+                      {note.note_type === "call" ? "☎" : note.note_type === "estimate" ? "$" : note.note_type === "status_change" ? "→" : "✎"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-stone-300">{note.content}</div>
+                      <div className="text-xs text-stone-600 mt-0.5">{new Date(note.created_at).toLocaleString()}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          {/* Right: Quick info sidebar */}
+          <div className="space-y-4">
+            <Card className="bg-stone-900">
+              <div className="text-center mb-4">
+                <div className="w-16 h-16 bg-amber-900/40 rounded-full flex items-center justify-center text-amber-400 text-2xl font-bold mx-auto mb-2">{lead.name?.[0] || "?"}</div>
+                <div className="font-bold text-lg text-stone-100">{lead.name}</div>
+                <div className="text-xs text-stone-500">{lead.address}</div>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-stone-500">Service</span><span className="text-stone-200">{lead.service_type || "—"}</span></div>
+                <div className="flex justify-between"><span className="text-stone-500">Frequency</span><span className="text-stone-200">{lead.frequency || "—"}</span></div>
+                <div className="flex justify-between"><span className="text-stone-500">Lot Size</span><span className="text-stone-200">{lead.lot_size || "—"}</span></div>
+                {lead.price > 0 && <div className="flex justify-between"><span className="text-stone-500">Price</span><span className="text-emerald-400 font-bold">${lead.price}</span></div>}
+                <div className="flex justify-between"><span className="text-stone-500">Created</span><span className="text-stone-200">{new Date(lead.created_at).toLocaleDateString()}</span></div>
+              </div>
+            </Card>
+            {/* Status pipeline */}
+            <Card className="bg-stone-900">
+              <h3 className="font-bold text-stone-300 text-xs uppercase tracking-wider mb-3">Pipeline Stage</h3>
+              <div className="space-y-1.5">
+                {["new", "contacted", "estimate_sent", "converted"].map(s => (
+                  <button key={s} onClick={() => lead.status !== s && handleStatusChange(lead, s)}
+                    className={`w-full text-left text-xs px-3 py-2 rounded-lg transition-all flex items-center gap-2 ${
+                      lead.status === s ? "bg-emerald-700/40 text-emerald-300 font-semibold" : "text-stone-500 hover:bg-stone-800 hover:text-stone-300"
+                    }`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${lead.status === s ? "bg-emerald-400" : "bg-stone-700"}`} />
+                    {statusLabel(s)}
+                  </button>
+                ))}
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── LEADS LIST VIEW ────────────────────────────────────────
+  if (crmView === "leads") return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-extrabold">Leads Pipeline</h1>
+          <p className="text-stone-500 text-sm">{statusCounts.all} total · <span className="text-amber-400 font-semibold">{statusCounts.new} new</span></p>
+        </div>
+        <button onClick={() => setCrmView("customers")} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-600 text-stone-200 px-4 py-2 rounded-xl text-sm font-semibold transition-all">
+          <Icon name="users" size={15} /> Customers
+        </button>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-1.5 mb-5 overflow-x-auto pb-1">
+        {[["all", "All Active"], ["new", "New"], ["contacted", "Contacted"], ["estimate_sent", "Estimate Sent"], ["converted", "Converted"], ["archived", "Archived"]].map(([key, label]) => (
+          <button key={key} onClick={() => setLeadFilter(key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+              leadFilter === key ? "bg-emerald-700 text-white" : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+            }`}
+          >
+            {label} {statusCounts[key] > 0 && <span className="ml-1 opacity-60">({statusCounts[key]})</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Leads list */}
+      {leadsLoading ? (
+        <Card className="flex items-center justify-center py-12">
+          <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        </Card>
+      ) : filteredLeads.length === 0 ? (
+        <Card className="text-center py-12 text-stone-600">
+          <Icon name="users" size={32} color="#57534e" />
+          <p className="mt-2 text-sm">{leadFilter === "all" ? "No leads yet. Estimate requests and sign-ups will appear here." : `No ${leadFilter.replace("_"," ")} leads.`}</p>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {filteredLeads.map(lead => (
+            <div key={lead.id} className="bg-stone-900 border border-stone-800 rounded-2xl p-4 hover:border-stone-700 transition-all cursor-pointer"
+              onClick={() => { setSelectedLead(lead); setCrmView("lead-detail"); }}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 ${
+                    lead.status === "new" ? "bg-amber-900/40 text-amber-400" :
+                    lead.status === "contacted" ? "bg-blue-900/40 text-blue-400" :
+                    lead.status === "estimate_sent" ? "bg-emerald-900/40 text-emerald-400" :
+                    lead.status === "converted" ? "bg-green-900/40 text-green-400" :
+                    "bg-stone-800 text-stone-500"
+                  }`}>{lead.name?.[0] || "?"}</div>
+                  <div>
+                    <div className="font-bold text-stone-100">{lead.name}</div>
+                    <div className="text-xs text-stone-400 mt-0.5">{lead.address || "No address"}</div>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <Badge color={statusColor(lead.status)}>{statusLabel(lead.status)}</Badge>
+                      {lead.service_type && <Badge color="gray">{lead.service_type}</Badge>}
+                      {lead.frequency && <Badge color="gray">{lead.frequency}</Badge>}
+                    </div>
+                    {lead.notes && <div className="text-xs text-stone-500 mt-2 italic truncate max-w-sm">"{lead.notes}"</div>}
+                    <div className="text-xs text-stone-600 mt-1">
+                      {lead.source === "signup_form" ? "Sign-Up" : "Website"} · {new Date(lead.created_at).toLocaleDateString()}
+                      {lead.lead_notes?.length > 0 && <span className="ml-2 text-stone-500">{lead.lead_notes.length} note{lead.lead_notes.length !== 1 ? "s" : ""}</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 shrink-0" onClick={ev => ev.stopPropagation()}>
+                  {lead.phone && (
+                    <a href={`tel:${lead.phone}`} className="text-xs bg-emerald-700/30 hover:bg-emerald-700/60 text-emerald-400 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
+                      <Icon name="phone" size={11} /> {lead.phone}
+                    </a>
+                  )}
+                  {lead.status === "new" && (
+                    <button onClick={() => handleStatusChange(lead, "contacted")} className="text-xs bg-blue-700/30 hover:bg-blue-700/60 text-blue-400 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
+                      <Icon name="phone" size={11} /> Contacted
+                    </button>
+                  )}
+                  {lead.status !== "converted" && lead.status !== "archived" && (
+                    <button onClick={() => handleConvert(lead)} className="text-xs bg-emerald-700/30 hover:bg-emerald-700/60 border border-emerald-700/50 text-emerald-400 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
+                      <Icon name="check" size={11} /> Convert
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // ── CUSTOMERS LIST VIEW ─────────────────────────────────────
   if (crmView === "customers") return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-extrabold">Customer CRM</h1>
-          <p className="text-stone-500 text-sm">{customers.length} active · <span className="text-amber-400 font-semibold">{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length} new lead{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length !== 1 ? "s" : ""}</span></p>
+          <p className="text-stone-500 text-sm">{customers.length} active · <span className="text-amber-400 font-semibold">{statusCounts.new} new lead{statusCounts.new !== 1 ? "s" : ""}</span></p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setCrmView("leads")} className="relative flex items-center gap-2 bg-amber-700/30 hover:bg-amber-700/60 text-amber-400 px-4 py-2 rounded-xl text-sm font-semibold transition-all">
+            <Icon name="users" size={15} /> Leads
+            {statusCounts.new > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-amber-500 rounded-full text-[10px] font-black text-black flex items-center justify-center">
+                {statusCounts.new}
+              </span>
+            )}
+          </button>
           <button onClick={() => setCrmView("changes")} className="relative flex items-center gap-2 border border-amber-700/60 hover:bg-amber-900/20 text-amber-400 px-4 py-2 rounded-xl text-sm font-semibold transition-all">
             <Icon name="calendar" size={15} /> Schedule Changes
             {changeRequests.filter(r=>r.status==="pending").length > 0 && (
@@ -1541,58 +1951,13 @@ Owen's Lawn + Landscape
         </div>
       </div>
 
-      {/* New Leads */}
-      {newLeads.filter(l => !convertedLeadIds.includes(l.id)).length > 0 && (
-        <div className="mb-7">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
-            <h2 className="font-bold text-amber-400 text-sm uppercase tracking-wider">New Sign-Up Leads</h2>
-            <Badge color="yellow">{newLeads.filter(l => !convertedLeadIds.includes(l.id)).length} pending</Badge>
-          </div>
-          <div className="space-y-3">
-            {newLeads.filter(lead => !convertedLeadIds.includes(lead.id)).map((lead, i) => (
-              <div key={lead.id} className="bg-amber-950/20 border border-amber-800/40 rounded-2xl p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-amber-900/40 rounded-full flex items-center justify-center text-amber-400 font-bold shrink-0">{lead.name[0]}</div>
-                    <div>
-                      <div className="font-bold text-stone-100">{lead.name}</div>
-                      <div className="text-xs text-stone-400 mt-0.5">{lead.address}</div>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        <Badge color="yellow">{lead.serviceType}</Badge>
-                        {lead.frequency && <Badge color="gray">{lead.frequency}</Badge>}
-                        {lead.lotSize && <Badge color="gray">{lead.lotSize}</Badge>}
-                      </div>
-                      {lead.notes && <div className="text-xs text-stone-500 mt-2 italic">"{lead.notes}"</div>}
-                      <div className="text-xs text-stone-600 mt-2">Via: {lead.heardFrom}{lead.referralCode && <span className="text-emerald-500 ml-2">Ref: {lead.referralCode}</span>} · {lead.submittedAt}</div>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2 shrink-0">
-                    <a href={`tel:${lead.phone}`} className="text-xs bg-emerald-700/30 hover:bg-emerald-700/60 text-emerald-400 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
-                      <Icon name="phone" size={11} /> {lead.phone}
-                    </a>
-                    <a href={`mailto:${lead.email}`} className="text-xs bg-stone-700/40 hover:bg-stone-700 text-stone-300 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
-                      <Icon name="mail" size={11} /> Email
-                    </a>
-                    <button
-                      onClick={() => convertLead(lead.id)}
-                      className="text-xs bg-emerald-700/30 hover:bg-emerald-700/60 border border-emerald-700/50 text-emerald-400 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
-                    >
-                      <Icon name="check" size={11} /> Convert → Client
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {newLeads.length === 0 && (
-        <div className="mb-6 bg-stone-900 border border-dashed border-stone-700 rounded-2xl p-4 flex items-center gap-3 text-stone-600">
-          <Icon name="users" size={16} color="#57534e" />
-          <span className="text-sm">No new leads yet. Sign-ups from the customer portal will appear here.</span>
-        </div>
+      {/* New Leads Banner (quick access) */}
+      {statusCounts.new > 0 && (
+        <button onClick={() => setCrmView("leads")} className="w-full mb-5 bg-amber-950/30 border border-amber-800/40 rounded-2xl p-4 flex items-center gap-3 hover:bg-amber-950/50 transition-all text-left">
+          <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+          <span className="text-amber-400 font-semibold text-sm">{statusCounts.new} new lead{statusCounts.new !== 1 ? "s" : ""} waiting for review</span>
+          <span className="text-xs text-stone-500 ml-auto">View leads →</span>
+        </button>
       )}
 
       {/* Active Customers Table */}
@@ -1619,7 +1984,7 @@ Owen's Lawn + Landscape
                   <td className="py-3 px-4 text-stone-400">{c.service}</td>
                   <td className="py-3 px-4 text-emerald-400 font-bold">${c.price}</td>
                   <td className="py-3 px-4"><Badge color={c.frequency === "Weekly" ? "green" : c.frequency === "Biweekly" ? "blue" : "gray"}>{c.frequency}</Badge></td>
-                  <td className="py-3 px-4 text-stone-400 text-xs">{routeDay(c.id)}</td>
+                  <td className="py-3 px-4 text-stone-400 text-xs">{c.route_day || routeDay(c.id)}</td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-1.5">
                       <span className="font-mono text-[10px] text-emerald-500/80 bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-900/40 truncate max-w-[120px]">?token={c.token}</span>
@@ -2608,32 +2973,33 @@ const AdminPortal = ({ onLogout }) => {
   const [markPaidModal, setMarkPaidModal] = useState(null); // invoice object
   const [markPaidMethod, setMarkPaidMethod] = useState("Cash");
   const [convertedLeadIds, setConvertedLeadIds] = useState([]);
+  // Load customers from Supabase (fall back to hardcoded seed data when offline)
   const [customers, setCustomers] = useState(CUSTOMERS);
 
-  const convertLead = (leadId) => {
-    setConvertedLeadIds(prev => [...prev, leadId]);
-    const lead = newLeads.find(l => l.id === leadId);
-    if (lead) {
-      const newId = Math.max(...customers.map(c => c.id), 0) + 1;
-      const tokenBase = (lead.name || "xx").toLowerCase().replace(/[^a-z]/g,"").slice(0,2) + Math.random().toString(36).slice(2,8);
-      const refCode = (lead.name || "NEW").split(" ")[0].toUpperCase().slice(0,4) + "2026";
-      const newCustomer = {
-        id: newId,
-        name: lead.name,
-        email: lead.email || "",
-        phone: lead.phone || "",
-        address: lead.address || "",
-        service: lead.serviceType || "Mowing",
-        price: 0,
-        frequency: lead.frequency || "Weekly",
-        status: "Active",
-        balance: 0,
-        referralCode: refCode,
-        token: tokenBase,
-      };
-      setCustomers(prev => [...prev, newCustomer]);
+  // Fetch customers from Supabase on mount
+  const refreshCustomers = useCallback(async () => {
+    const data = await db.fetchCustomers();
+    if (data && data.length > 0) setCustomers(data);
+  }, []);
+
+  useEffect(() => {
+    refreshCustomers();
+  }, [refreshCustomers]);
+
+  // Navigate to estimator tab pre-filled with lead data
+  const handleNavigateEstimator = useCallback((leadData) => {
+    if (leadData) {
+      setEstimateForm(prev => ({
+        ...prev,
+        customer: leadData.name || prev.customer,
+        service: leadData.serviceType || leadData.service_type || prev.service,
+        area: leadData.lotSize || leadData.lot_size || prev.area,
+        frequency: leadData.frequency || prev.frequency,
+        notes: leadData.notes || prev.notes,
+      }));
     }
-  };
+    setTab("estimator");
+  }, []);
 
   const markInvoicePaid = (invoiceId, method) => {
     setAdminInvoices(prev => prev.map(inv =>
@@ -2835,7 +3201,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         )}
 
         {/* CRM */}
-        {tab === "crm" && <CRMTab newLeads={newLeads} convertLead={convertLead} convertedLeadIds={convertedLeadIds} customers={customers} />}
+        {tab === "crm" && <CRMTab newLeads={newLeads} convertLead={convertLead} convertedLeadIds={convertedLeadIds} customers={customers} onRefreshCustomers={refreshCustomers} onNavigateEstimator={handleNavigateEstimator} />}
 
         {/* SCHEDULE */}
         {/* ── PAYMENTS TAB ── */}
@@ -3181,12 +3547,23 @@ const SendMeLinkModal = ({ onClose }) => {
   const [sent, setSent] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
-  const handleSend = () => {
-    // Look up by email or phone (demo: check against customer list)
-    const match = CUSTOMERS.find(c =>
-      c.email.toLowerCase() === input.toLowerCase() ||
-      c.phone.replace(/\D/g,"") === input.replace(/\D/g,"")
-    );
+  const handleSend = async () => {
+    // Look up by email or phone via Supabase (falls back to hardcoded list when offline)
+    let match = null;
+    if (isOnline()) {
+      const normalized = input.trim();
+      const isEmail = normalized.includes("@");
+      const query = isEmail
+        ? supabase.from("customers").select("*").ilike("email", normalized).limit(1).single()
+        : supabase.from("customers").select("*").eq("phone", normalized.replace(/\D/g, "")).limit(1).single();
+      const { data } = await query;
+      match = data;
+    } else {
+      match = CUSTOMERS.find(c =>
+        c.email.toLowerCase() === input.toLowerCase() ||
+        c.phone.replace(/\D/g,"") === input.replace(/\D/g,"")
+      );
+    }
     if (match) {
       setSent(true);
       setNotFound(false);
@@ -3578,10 +3955,17 @@ export default function App() {
     // The demo panel below lets you test any token interactively
   }, []);
 
-  const handleTokenLogin = (token) => {
-    const customerId = MAGIC_TOKENS[token];
-    if (customerId) {
-      const customer = CUSTOMERS.find(c => c.id === customerId);
+  const handleTokenLogin = async (token) => {
+    // Look up customer by token in Supabase (fall back to hardcoded data when offline)
+    let customer = null;
+    if (isOnline()) {
+      const { data } = await supabase.from("customers").select("*").eq("token", token).limit(1).single();
+      customer = data;
+    } else {
+      const customerId = MAGIC_TOKENS[token];
+      if (customerId) customer = CUSTOMERS.find(c => c.id === customerId);
+    }
+    if (customer) {
       setAuthedCustomer(customer);
       setView("magic-landing");
     }
@@ -3606,7 +3990,7 @@ export default function App() {
         <>
           <LoginPage
             type="customer"
-            onLogin={() => { setAuthedCustomer(CUSTOMERS[0]); setView("customer"); }}
+            onLogin={() => { if (authedCustomer) setView("customer"); }}
             onBack={() => setView("landing")}
             onSignUp={() => setView("signup")}
             onSendLink={() => setShowSendLink(true)}
@@ -3614,7 +3998,13 @@ export default function App() {
         </>
       )}
       {view === "adminLogin" && (
-        <LoginPage type="admin" onLogin={() => setView("admin")} onBack={() => setView("landing")} />
+        <LoginPage type="admin" onLogin={async (email, pass) => {
+          if (isOnline()) {
+            const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+            if (error) throw new Error(error.message);
+          }
+          setView("admin");
+        }} onBack={() => setView("landing")} />
       )}
       {view === "signup" && (
         <SignUpForm onBack={() => setView("customerLogin")} />
@@ -3624,7 +4014,7 @@ export default function App() {
       )}
       {view === "customer" && (
         <CustomerPortal
-          customer={authedCustomer || CUSTOMERS[0]}
+          customer={authedCustomer}
           onLogout={() => { setAuthedCustomer(null); setView("landing"); }}
         />
       )}
