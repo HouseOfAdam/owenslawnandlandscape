@@ -846,29 +846,45 @@ const LoginPage = ({ type, onLogin, onBack, onSignUp, onSendLink }) => {
 // SCHEDULE TAB (customer portal)
 // ============================================================
 const ScheduleTab = ({ customer }) => {
-  const [changeModal, setChangeModal] = useState(null); // visit object or null
+  const [changeModal, setChangeModal] = useState(null);
   const [changeType, setChangeType] = useState("");
   const [changeDate, setChangeDate] = useState("");
   const [changeNote, setChangeNote] = useState("");
   const [submitted, setSubmitted] = useState(null);
 
-  const SEASON_START = "March 10, 2026";
-  const SEASON_START_LABEL = "Mar 10";
+  const DOW_NAMES = { "Monday":1, "Tuesday":2, "Wednesday":3, "Thursday":4, "Friday":5, "Saturday":6 };
+  const routeDay = customer.route_day || "Friday";
+  const routeDow = DOW_NAMES[routeDay] || 5;
+  const frequency = customer.frequency || "Weekly";
+  const isWeekly = frequency === "Weekly";
+  const isBiweekly = frequency === "Biweekly";
+  const visitInterval = isBiweekly ? 14 : 7;
 
-  // Generate 8 weekly visits starting Mar 10 2026
+  // Season start: Apr 2, 2026
+  const seasonStart = new Date(2026, 3, 2);
+  // Find the first occurrence of customer's route day on or after season start
+  const startDow = seasonStart.getDay() === 0 ? 7 : seasonStart.getDay();
+  let daysUntilRoute = routeDow - startDow;
+  if (daysUntilRoute < 0) daysUntilRoute += 7;
+  const firstVisit = new Date(seasonStart);
+  firstVisit.setDate(seasonStart.getDate() + daysUntilRoute);
+
+  const SEASON_START_LABEL = firstVisit.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
   const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const base = new Date(2026, 2, 10); // Mar 10 2026
+
+  // Generate next 8 visits from first visit date
   const visits = Array.from({ length: 8 }, (_, i) => {
-    const d = new Date(base);
-    d.setDate(base.getDate() + i * 7);
+    const d = new Date(firstVisit);
+    d.setDate(firstVisit.getDate() + i * visitInterval);
     return {
       id: i,
       dayLabel: days[d.getDay()],
       dateLabel: `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`,
       dayNum: d.getDate(),
       monthLabel: months[d.getMonth()],
-      service: i === 3 ? "Weekly Mowing + Spring Pre-Emergent" : "Weekly Mowing",
+      service: `${frequency} ${customer.service || "Mowing"}`,
       isFirst: i === 0,
     };
   });
@@ -887,9 +903,9 @@ const ScheduleTab = ({ customer }) => {
           <Icon name="leaf" size={22} color="#1a4a2e" />
         </div>
         <div className="flex-1">
-          <div className="font-bold text-sm" style={{ color: "#1a4a2e" }}>2026 Season Starting Soon</div>
+          <div className="font-bold text-sm" style={{ color: "#1a4a2e" }}>2026 Season</div>
           <div className="text-sm mt-0.5" style={{ color: "#4a6358" }}>
-            Your first visit of the season is confirmed for <strong style={{ color: "#1a1a1a" }}>{SEASON_START}</strong>. Services run weekly through November.
+            Your first visit is <strong style={{ color: "#1a1a1a" }}>{SEASON_START_LABEL}</strong>. Services run {frequency.toLowerCase()} on {routeDay}s through November.
           </div>
         </div>
         <Badge color="green">Confirmed</Badge>
@@ -898,7 +914,7 @@ const ScheduleTab = ({ customer }) => {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-extrabold" style={{ color: "#1a1a1a" }}>Your 2026 Schedule</h1>
-          <p className="text-sm" style={{ color: "#6a7e72" }}>Showing next 8 visits · {customer.frequency} {customer.service}</p>
+          <p className="text-sm" style={{ color: "#6a7e72" }}>Showing next 8 visits · {frequency} {customer.service || "Mowing"} · {routeDay}s</p>
         </div>
       </div>
 
@@ -1011,30 +1027,52 @@ const CustomerPortal = ({ onLogout, customer }) => {
   const [feedbackRating, setFeedbackRating] = useState(5);
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [payModal, setPayModal] = useState(null); // null | invoice object
-  const [paidInvoices, setPaidInvoices] = useState([]); // ids marked paid in-session
+  const [payModal, setPayModal] = useState(null);
+  const [paidInvoices, setPaidInvoices] = useState([]);
+
+  // Fetch real invoices for this customer from Supabase
+  const [customerInvoices, setCustomerInvoices] = useState([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
+
+  useEffect(() => {
+    const loadInvoices = async () => {
+      if (!isOnline() || !customer?.id) { setInvoicesLoading(false); return; }
+      const { data, error } = await supabase
+        .from("invoices")
+        .select("*")
+        .eq("customer_id", customer.id)
+        .order("date_issued", { ascending: false });
+      if (!error && data) setCustomerInvoices(data);
+      setInvoicesLoading(false);
+    };
+    loadInvoices();
+  }, [customer?.id]);
 
   const VENMO_HANDLE = "owenlawnlandscape";
-  const APPLE_PAY_INFO = "Send via Apple Pay to: 317-868-4699";
 
-  const invoices = [
-    { id: "INV-003", date: "Mar 6, 2026",  amount: 105, status: "Unpaid", due: "Mar 16, 2026", services: ["Weekly Mowing x3", "Spring Pre-Emergent Application"] },
-    { id: "INV-002", date: "Nov 15, 2025", amount: 100, status: "Paid",   due: "Nov 25, 2025", services: ["Weekly Mowing x4"] },
-    { id: "INV-001", date: "Oct 31, 2025", amount: 150, status: "Paid",   due: "Nov 10, 2025", services: ["Weekly Mowing x4", "Fall Clean-Up"] },
-  ];
-
-  const effectiveInvoices = invoices.map(inv =>
-    paidInvoices.includes(inv.id) ? { ...inv, status: "Paid" } : inv
+  const effectiveInvoices = customerInvoices.map(inv =>
+    paidInvoices.includes(inv.id) ? { ...inv, status: "paid" } : inv
   );
-  const outstandingInvoices = effectiveInvoices.filter(inv => inv.status === "Unpaid");
-  const totalOwed = outstandingInvoices.reduce((sum, inv) => sum + inv.amount, 0);
+  const outstandingInvoices = effectiveInvoices.filter(inv => inv.status === "unpaid");
+  const totalOwed = outstandingInvoices.reduce((sum, inv) => sum + Number(inv.total), 0);
 
-  const schedule = [
-    { date: "Mar 8, 2026", day: "Sun", service: "Weekly Mowing", status: "upcoming" },
-    { date: "Mar 15, 2026", day: "Sun", service: "Weekly Mowing", status: "upcoming" },
-    { date: "Mar 22, 2026", day: "Sun", service: "Weekly Mowing", status: "upcoming" },
-    { date: "Mar 29, 2026", day: "Sun", service: "Weekly Mowing + Spring Pre-Emergent", status: "upcoming" },
-  ];
+  // Compute next visit from customer route_day + frequency
+  const DOW_MAP_PORTAL = { "Monday":1, "Tuesday":2, "Wednesday":3, "Thursday":4, "Friday":5, "Saturday":6 };
+  const routeDay = customer.route_day || "Friday";
+  const routeDow = DOW_MAP_PORTAL[routeDay] || 5;
+
+  const getNextVisitDate = () => {
+    const now = new Date();
+    const d = new Date(now);
+    // Find next occurrence of route day
+    const currentDow = d.getDay() === 0 ? 7 : d.getDay();
+    let daysUntil = routeDow - currentDow;
+    if (daysUntil <= 0) daysUntil += 7;
+    d.setDate(d.getDate() + daysUntil);
+    return d;
+  };
+  const nextVisit = getNextVisitDate();
+  const nextVisitLabel = nextVisit.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   const tabs = [
     { id: "dashboard", label: "Dashboard", icon: "home" },
@@ -1090,9 +1128,9 @@ const CustomerPortal = ({ onLogout, customer }) => {
                 <Icon name="invoice" size={16} color="#d97706" />
               </div>
               <div>
-                <div className="text-sm font-bold text-amber-700">Balance Due: ${totalOwed}.00</div>
+                <div className="text-sm font-bold text-amber-700">Balance Due: ${totalOwed.toFixed(2)}</div>
                 <div className="text-xs text-amber-600/70 mt-0.5">
-                  {outstandingInvoices.length} unpaid invoice{outstandingInvoices.length !== 1 ? "s" : ""} · Due {outstandingInvoices[0]?.due}
+                  {outstandingInvoices.length} unpaid invoice{outstandingInvoices.length !== 1 ? "s" : ""}
                 </div>
               </div>
             </div>
@@ -1109,9 +1147,9 @@ const CustomerPortal = ({ onLogout, customer }) => {
             <p className="text-[#7a9488] text-sm mb-6">Here's your account overview</p>
             <div className="grid grid-cols-3 gap-4 mb-6">
               {[
-                { label: "Service Rate", value: `$${customer.price}`, sub: "Per visit", icon: "dollar", color: "#1a4a2e" },
-                { label: "Account Balance", value: totalOwed > 0 ? `$${totalOwed}.00` : "$0.00", sub: totalOwed > 0 ? "Payment due" : "All paid up!", icon: totalOwed > 0 ? "invoice" : "check", color: totalOwed > 0 ? "#d97706" : "#1a4a2e" },
-                { label: "Next Visit", value: "Mar 10", sub: "Weekly Mowing", icon: "calendar", color: "#1a4a2e" },
+                { label: "Service Rate", value: `$${customer.price}`, sub: `Per visit · ${customer.frequency}`, icon: "dollar", color: "#1a4a2e" },
+                { label: "Account Balance", value: totalOwed > 0 ? `$${totalOwed.toFixed(2)}` : "$0.00", sub: totalOwed > 0 ? "Payment due" : "All paid up!", icon: totalOwed > 0 ? "invoice" : "check", color: totalOwed > 0 ? "#d97706" : "#1a4a2e" },
+                { label: "Next Visit", value: nextVisitLabel, sub: `${routeDay} · ${customer.service || "Mowing"}`, icon: "calendar", color: "#1a4a2e" },
               ].map((s, i) => (
                 <div key={i} className="bg-white border border-[#e8e2da] rounded-2xl p-5 shadow-sm">
                   <div className="flex items-start justify-between">
@@ -1129,35 +1167,46 @@ const CustomerPortal = ({ onLogout, customer }) => {
             </div>
             <div className="grid md:grid-cols-2 gap-5">
               <div className="bg-white border border-[#e8e2da] rounded-2xl p-5">
-                <h3 className="font-bold mb-3 flex items-center gap-2 text-[#111]"><Icon name="calendar" size={16} color="#1a4a2e" /> Upcoming Services</h3>
+                <h3 className="font-bold mb-3 flex items-center gap-2 text-[#111]"><Icon name="calendar" size={16} color="#1a4a2e" /> Your Schedule</h3>
                 <div className="space-y-2">
-                  {schedule.slice(0,3).map((s, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: "#f7f4ef" }}>
-                      <div>
-                        <div className="text-sm font-semibold text-[#111]">{s.date}</div>
-                        <div className="text-xs text-[#7a9488]">{s.service}</div>
-                      </div>
-                      <Badge color="green">Scheduled</Badge>
+                  <div className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: "#f7f4ef" }}>
+                    <div>
+                      <div className="text-sm font-semibold text-[#111]">Every {routeDay}</div>
+                      <div className="text-xs text-[#7a9488]">{customer.frequency} {customer.service || "Mowing"}</div>
                     </div>
-                  ))}
+                    <Badge color="green">Active</Badge>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: "#f0f7f2", border: "1px solid #c8ddd0" }}>
+                    <div>
+                      <div className="text-sm font-semibold text-[#111]">Next: {nextVisit.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+                      <div className="text-xs text-[#7a9488]">{customer.service || "Mowing"}</div>
+                    </div>
+                    <Badge color="green">Scheduled</Badge>
+                  </div>
                 </div>
               </div>
               <div className="bg-white border border-[#e8e2da] rounded-2xl p-5">
                 <h3 className="font-bold mb-3 flex items-center gap-2 text-[#111]"><Icon name="invoice" size={16} color="#1a4a2e" /> Recent Invoices</h3>
-                <div className="space-y-2">
-                  {invoices.map((inv, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: "#f7f4ef" }}>
-                      <div>
-                        <div className="text-sm font-semibold text-[#111]">{inv.id}</div>
-                        <div className="text-xs text-[#7a9488]">{inv.date}</div>
+                {customerInvoices.length === 0 ? (
+                  <div className="text-sm text-[#7a9488] text-center py-6">
+                    {invoicesLoading ? "Loading…" : "No invoices yet"}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {effectiveInvoices.slice(0, 3).map((inv) => (
+                      <div key={inv.id} className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: "#f7f4ef" }}>
+                        <div>
+                          <div className="text-sm font-semibold text-[#111]">{inv.invoice_number}</div>
+                          <div className="text-xs text-[#7a9488]">{inv.date_issued}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold" style={{ color: "#1a4a2e" }}>${Number(inv.total).toFixed(2)}</span>
+                          <Badge color={inv.status === "unpaid" ? "yellow" : "green"}>{inv.status === "unpaid" ? "Unpaid" : "Paid"}</Badge>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold" style={{ color: "#1a4a2e" }}>${inv.amount}</span>
-                        <Badge color={inv.status === "Unpaid" ? "yellow" : "green"}>{inv.status}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1176,12 +1225,12 @@ const CustomerPortal = ({ onLogout, customer }) => {
               <div className="rounded-2xl p-5 mb-6 flex items-center justify-between gap-4" style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
                 <div>
                   <div className="text-amber-600 text-sm font-semibold mb-0.5">Outstanding Balance</div>
-                  <div className="text-4xl font-black text-amber-700">${totalOwed}.00</div>
-                  <div className="text-xs text-amber-600/70 mt-1">Due by {outstandingInvoices[0]?.due}</div>
+                  <div className="text-4xl font-black text-amber-700">${totalOwed.toFixed(2)}</div>
+                  <div className="text-xs text-amber-600/70 mt-1">{outstandingInvoices.length} invoice{outstandingInvoices.length !== 1 ? "s" : ""} · Due on receipt</div>
                 </div>
                 <button onClick={() => setPayModal(outstandingInvoices[0])}
                   className="text-white font-black px-6 py-3 rounded-2xl text-sm transition-all hover:opacity-90" style={{ background: "#d97706" }}>
-                  Pay ${totalOwed}.00 Now
+                  Pay ${totalOwed.toFixed(2)} Now
                 </button>
               </div>
             ) : (
@@ -1195,39 +1244,45 @@ const CustomerPortal = ({ onLogout, customer }) => {
               </div>
             )}
 
-            <div className="space-y-3">
-              {effectiveInvoices.map((inv) => {
-                const unpaid = inv.status === "Unpaid";
-                return (
-                  <div key={inv.id} className="rounded-2xl border p-4 transition-all" style={{ background: unpaid ? "#fffbeb" : "white", borderColor: unpaid ? "#fcd34d" : "#e8e2da" }}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-base text-[#111]">{inv.id}</span>
-                          <Badge color={unpaid ? "yellow" : "green"}>{inv.status}</Badge>
-                          {unpaid && <span className="text-xs text-amber-600/80">Due {inv.due}</span>}
+            {invoicesLoading ? (
+              <div className="text-center py-12 text-[#7a9488] text-sm">Loading invoices…</div>
+            ) : effectiveInvoices.length === 0 ? (
+              <div className="text-center py-12 text-[#7a9488] text-sm">No invoices yet. Your first invoice will appear here after services begin.</div>
+            ) : (
+              <div className="space-y-3">
+                {effectiveInvoices.map((inv) => {
+                  const unpaid = inv.status === "unpaid";
+                  const lineItems = inv.line_items || [];
+                  return (
+                    <div key={inv.id} className="rounded-2xl border p-4 transition-all" style={{ background: unpaid ? "#fffbeb" : "white", borderColor: unpaid ? "#fcd34d" : "#e8e2da" }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-bold text-base text-[#111]">{inv.invoice_number}</span>
+                            <Badge color={unpaid ? "yellow" : "green"}>{unpaid ? "Unpaid" : "Paid"}</Badge>
+                          </div>
+                          <div className="text-xs text-[#7a9488] mb-2">Issued {inv.date_issued}{inv.paid_on ? ` · Paid ${inv.paid_on}` : ""}</div>
+                          {lineItems.map((li, j) => (
+                            <div key={j} className="text-xs text-[#5a6e62]">• {li.description} — ${Number(li.amount).toFixed(2)}</div>
+                          ))}
                         </div>
-                        <div className="text-xs text-[#7a9488] mb-2">Issued {inv.date}</div>
-                        {inv.services.map((s, j) => (
-                          <div key={j} className="text-xs text-[#5a6e62]">• {s}</div>
-                        ))}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className={`text-2xl font-extrabold mb-2`} style={{ color: unpaid ? "#d97706" : "#7a9488" }}>
-                          ${inv.amount}.00
+                        <div className="text-right shrink-0">
+                          <div className="text-2xl font-extrabold mb-2" style={{ color: unpaid ? "#d97706" : "#7a9488" }}>
+                            ${Number(inv.total).toFixed(2)}
+                          </div>
+                          {unpaid && (
+                            <button onClick={() => setPayModal(inv)}
+                              className="text-white text-xs font-bold px-4 py-2 rounded-xl transition-all hover:opacity-90" style={{ background: "#d97706" }}>
+                              Pay Now →
+                            </button>
+                          )}
                         </div>
-                        {unpaid && (
-                          <button onClick={() => setPayModal(inv)}
-                            className="text-white text-xs font-bold px-4 py-2 rounded-xl transition-all hover:opacity-90" style={{ background: "#d97706" }}>
-                            Pay Now →
-                          </button>
-                        )}
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1237,33 +1292,20 @@ const CustomerPortal = ({ onLogout, customer }) => {
             <div className="bg-white border border-[#ddd8d0] rounded-3xl w-full max-w-md shadow-2xl shadow-[#1a4a2e]/10">
               <div className="px-6 pt-6 pb-4 border-b border-[#e8e2da] flex items-start justify-between">
                 <div>
-                  <h2 className="text-xl font-black text-[#111]">Pay {payModal.id}</h2>
+                  <h2 className="text-xl font-black text-[#111]">Pay {payModal.invoice_number}</h2>
                   <p className="text-[#7a9488] text-sm mt-0.5">Choose how you'd like to pay</p>
                 </div>
                 <button onClick={() => setPayModal(null)} className="text-[#a0a89e] hover:text-[#111] transition-colors text-xl leading-none mt-1">✕</button>
               </div>
               <div className="px-6 py-4 border-b border-[#e8e2da] flex items-center justify-between" style={{ background: "#f7f4ef" }}>
                 <span className="text-[#7a9488] text-sm">Amount due</span>
-                <span className="text-2xl font-extrabold text-amber-600">${payModal.amount}.00</span>
+                <span className="text-2xl font-extrabold text-amber-600">${Number(payModal.total).toFixed(2)}</span>
               </div>
 
               {/* Payment options */}
               <div className="px-6 py-5 space-y-3">
-                {/* Credit Card via Stripe */}
-                <a href={`https://buy.stripe.com/placeholder?amount=${payModal.amount * 100}&description=${encodeURIComponent(payModal.id)}`}
-                  target="_blank" rel="noreferrer"
-                  className="flex items-center gap-4 border rounded-2xl px-4 py-3.5 transition-all group hover:shadow-md"
-                  style={{ background: "#f5f3ff", borderColor: "#c4b5fd" }}>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white font-black text-sm" style={{ background: "#7c3aed" }}>💳</div>
-                  <div className="flex-1">
-                    <div className="font-bold text-[#111] text-sm">Pay by Credit / Debit Card</div>
-                    <div className="text-xs text-[#7a9488]">Powered by Stripe · 2.9% + 30¢ fee applies</div>
-                  </div>
-                  <span className="text-[#a0a89e] text-sm">↗</span>
-                </a>
-
                 {/* Venmo */}
-                <a href={`venmo://paycharge?txn=pay&recipients=${VENMO_HANDLE}&amount=${payModal.amount}&note=${encodeURIComponent(payModal.id + " - Owen's Lawn + Landscape")}`}
+                <a href={`venmo://paycharge?txn=pay&recipients=${VENMO_HANDLE}&amount=${Number(payModal.total)}&note=${encodeURIComponent(payModal.invoice_number + " - Owen's Lawn + Landscape")}`}
                   target="_blank" rel="noreferrer"
                   className="flex items-center gap-4 border rounded-2xl px-4 py-3.5 transition-all group hover:shadow-md"
                   style={{ background: "#e8f4ff", borderColor: "#93c5fd" }}>
@@ -1278,7 +1320,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
                 {/* Apple Pay */}
                 <button onClick={() => {
                   navigator.clipboard?.writeText("317-868-4699");
-                  alert("Phone number copied! Open Apple Pay and send $" + payModal.amount + " to 317-868-4699 with note: " + payModal.id);
+                  alert("Phone number copied! Open Apple Pay and send $" + Number(payModal.total).toFixed(2) + " to 317-868-4699 with note: " + payModal.invoice_number);
                 }}
                   className="w-full flex items-center gap-4 border rounded-2xl px-4 py-3.5 transition-all group text-left hover:shadow-md"
                   style={{ background: "#f5f5f7", borderColor: "#d1d5db" }}>
@@ -1298,7 +1340,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
                   </div>
                   <div className="text-xs text-[#6a7e72] leading-relaxed pl-1">
                     Leave payment at time of service, or mail a check payable to <span className="text-[#1a4a2e] font-semibold">Owen Scheidler</span> at 4729 N Banta Rd, Bargersville IN 46106.
-                    Include <span className="text-[#1a4a2e] font-semibold">{payModal.id}</span> in the memo line.
+                    Include <span className="text-[#1a4a2e] font-semibold">{payModal.invoice_number}</span> in the memo line.
                   </div>
                 </div>
               </div>
