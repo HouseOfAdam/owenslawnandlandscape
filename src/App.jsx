@@ -1056,19 +1056,32 @@ const CustomerPortal = ({ onLogout, customer }) => {
   const outstandingInvoices = effectiveInvoices.filter(inv => inv.status === "unpaid");
   const totalOwed = outstandingInvoices.reduce((sum, inv) => sum + Number(inv.total), 0);
 
-  // Compute next visit from customer route_day + frequency
+  // Compute next visit from customer route_day + frequency + season start
   const DOW_MAP_PORTAL = { "Monday":1, "Tuesday":2, "Wednesday":3, "Thursday":4, "Friday":5, "Saturday":6 };
   const routeDay = customer.route_day || "Friday";
   const routeDow = DOW_MAP_PORTAL[routeDay] || 5;
+  const frequency = customer.frequency || "Weekly";
+  const visitInterval = frequency === "Biweekly" ? 14 : 7;
 
+  // Season start: Apr 2, 2026 — find first visit on customer's route day
+  const seasonStart = new Date(2026, 3, 2);
+  const startDow = seasonStart.getDay() === 0 ? 7 : seasonStart.getDay();
+  let daysUntilRoute = routeDow - startDow;
+  if (daysUntilRoute < 0) daysUntilRoute += 7;
+  const firstVisit = new Date(seasonStart);
+  firstVisit.setDate(seasonStart.getDate() + daysUntilRoute);
+
+  // Find the next upcoming visit from today
   const getNextVisitDate = () => {
     const now = new Date();
-    const d = new Date(now);
-    // Find next occurrence of route day
-    const currentDow = d.getDay() === 0 ? 7 : d.getDay();
-    let daysUntil = routeDow - currentDow;
-    if (daysUntil <= 0) daysUntil += 7;
-    d.setDate(d.getDate() + daysUntil);
+    now.setHours(0, 0, 0, 0);
+    const d = new Date(firstVisit);
+    // If first visit is still in the future, that's the next one
+    if (d >= now) return d;
+    // Otherwise walk forward by visitInterval until we pass today
+    while (d < now) {
+      d.setDate(d.getDate() + visitInterval);
+    }
     return d;
   };
   const nextVisit = getNextVisitDate();
