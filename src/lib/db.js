@@ -239,3 +239,57 @@ export async function deleteExpense(id) {
   if (error) { console.error("deleteExpense:", error); return null; }
   return true;
 }
+
+// ============================================================
+// SERVICE VISITS — actual completed/scheduled work
+// ============================================================
+
+export async function fetchServiceVisits() {
+  if (!isOnline()) return [];
+  const { data, error } = await supabase
+    .from("service_visits")
+    .select("*, customers(name)")
+    .order("date", { ascending: false });
+  if (error) { console.error("fetchServiceVisits:", error); return []; }
+  return data;
+}
+
+export async function createServiceVisit(visit) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase
+    .from("service_visits")
+    .insert([{
+      customer_id: visit.customer_id,
+      date: visit.date,
+      service: visit.service || "Mowing",
+      amount: Number(visit.amount),
+      status: visit.status || "completed",
+      notes: visit.notes || "",
+    }])
+    .select("*, customers(name)")
+    .single();
+  if (error) { console.error("createServiceVisit:", error); return null; }
+  return data;
+}
+
+export async function updateServiceVisit(id, updates) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase
+    .from("service_visits")
+    .update(updates)
+    .eq("id", id)
+    .select("*, customers(name)")
+    .single();
+  if (error) { console.error("updateServiceVisit:", error); return null; }
+  return data;
+}
+
+export async function deleteServiceVisit(id) {
+  if (!isOnline()) return null;
+  const { error } = await supabase
+    .from("service_visits")
+    .delete()
+    .eq("id", id);
+  if (error) { console.error("deleteServiceVisit:", error); return null; }
+  return true;
+}

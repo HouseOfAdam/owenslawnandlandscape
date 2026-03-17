@@ -3137,6 +3137,21 @@ const AdminPortal = ({ onLogout }) => {
     ],
   };
 
+  // ── 2026 Service Visits State ─────────────────────────────
+  const [serviceVisits, setServiceVisits] = useState([]);
+  const [showAddVisit, setShowAddVisit] = useState(false);
+  const [newVisit, setNewVisit] = useState({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "" });
+  const serviceTypes = ["Mowing","Leaf Removal","Landscaping","Mulching","Hedge Trimming","Snow Removal","Spring Cleanup","Fall Cleanup","Other"];
+
+  const refreshServiceVisits = useCallback(async () => {
+    const data = await db.fetchServiceVisits();
+    if (data) setServiceVisits(data);
+  }, []);
+
+  useEffect(() => {
+    refreshServiceVisits();
+  }, [refreshServiceVisits]);
+
   // ── 2026 Expense Tracking State ───────────────────────────
   const [expenses, setExpenses] = useState([]);
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -3153,19 +3168,12 @@ const AdminPortal = ({ onLogout }) => {
     refreshExpenses();
   }, [refreshExpenses]);
 
-  // ── 2026 Revenue (computed from customer data) ────────────
+  // ── 2026 Revenue (from actual completed service visits) ───
+  const completedVisits = serviceVisits.filter(v => v.status === "completed");
   const monthlyRevenue2026 = months.map((m, i) => {
-    // Only count months that have started (Mar = month 2 onward for lawn season)
-    const now = new Date();
-    const monthDate = new Date(2026, i, 1);
-    if (monthDate > now) return 0;
-    // Simple estimate: sum of weekly customers * 4 + biweekly * 2 for active months
-    if (i < 2 || i > 10) return 0; // off-season Jan, Feb, Dec
-    return customers.reduce((sum, c) => {
-      if (c.status !== "Active") return sum;
-      const visits = (c.frequency === "Weekly") ? 4 : (c.frequency === "Biweekly") ? 2 : 1;
-      return sum + (c.price * visits);
-    }, 0);
+    return completedVisits
+      .filter(v => new Date(v.date).getMonth() === i && new Date(v.date).getFullYear() === 2026)
+      .reduce((sum, v) => sum + Number(v.amount), 0);
   });
   const totalRevenue2026 = monthlyRevenue2026.reduce((a,b) => a+b, 0);
   const monthlyExpenses2026 = months.map((m, i) => {
@@ -3183,6 +3191,7 @@ const AdminPortal = ({ onLogout }) => {
     { id: "crm",        label: "CRM",                  icon: "users" },
     { id: "payments",   label: "Payments",             icon: "dollar" },
     { id: "expenses",   label: "Expense Tracker",      icon: "clipboard" },
+    { id: "visits",     label: "Service Visits",       icon: "check" },
     { id: "schedule",   label: "Schedule & Routes",    icon: "map" },
     { id: "estimator",  label: "AI Estimator",         icon: "sparkle" },
     { id: "materials",  label: "Materials & Equipment",icon: "package" },
@@ -3365,6 +3374,176 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
 
         {/* CRM */}
         {tab === "crm" && <CRMTab newLeads={newLeads} customers={customers} onRefreshCustomers={refreshCustomers} onNavigateEstimator={handleNavigateEstimator} />}
+
+        {/* SERVICE VISITS */}
+        {tab === "visits" && (
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-extrabold">Service Visits</h1>
+                <p className="text-stone-500 text-sm">Log completed visits — revenue is computed from this data</p>
+              </div>
+              <button onClick={() => { setNewVisit({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "" }); setShowAddVisit(true); }} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-all">
+                + Log Visit
+              </button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-4 mb-6">
+              <StatCard label="Completed" value={`${completedVisits.filter(v => new Date(v.date).getFullYear() === 2026).length}`} sub="2026 visits" icon="check" color="emerald" />
+              <StatCard label="Revenue" value={`$${totalRevenue2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="from visits" icon="dollar" color="emerald" />
+              <StatCard label="Scheduled" value={`${serviceVisits.filter(v => v.status === "scheduled").length}`} sub="upcoming" icon="calendar" color="blue" />
+              <StatCard label="Skipped" value={`${serviceVisits.filter(v => v.status === "skipped").length}`} sub="this season" icon="alert" color="amber" />
+            </div>
+
+            {/* Quick-add row: log a completed visit for today */}
+            <Card className="mb-5">
+              <h3 className="font-bold mb-3 flex items-center gap-2"><Icon name="sparkle" size={16} color="#34d399" /> Quick Log — Today's Visits</h3>
+              <p className="text-stone-500 text-xs mb-3">Tap a customer to log a completed visit at their current rate for today.</p>
+              <div className="flex flex-wrap gap-2">
+                {customers.filter(c => c.status === "Active").map(c => (
+                  <button key={c.id} onClick={async () => {
+                    const saved = await db.createServiceVisit({
+                      customer_id: c.id,
+                      date: new Date().toISOString().slice(0, 10),
+                      service: c.service || "Mowing",
+                      amount: c.price || 0,
+                      status: "completed",
+                      notes: "",
+                    });
+                    if (saved) await refreshServiceVisits();
+                    else setServiceVisits(prev => [...prev, { id: Date.now(), customer_id: c.id, customers: { name: c.name }, date: new Date().toISOString().slice(0,10), service: c.service || "Mowing", amount: c.price || 0, status: "completed", notes: "" }]);
+                  }} className="bg-stone-800 hover:bg-emerald-900/40 border border-stone-700 hover:border-emerald-700 rounded-xl px-3 py-2 text-sm transition-all group">
+                    <span className="font-semibold text-stone-200 group-hover:text-emerald-300">{c.name}</span>
+                    <span className="text-stone-500 ml-1.5 text-xs">${c.price}</span>
+                  </button>
+                ))}
+              </div>
+            </Card>
+
+            {/* Visit log table */}
+            <Card>
+              <h3 className="font-bold mb-4">Visit Log</h3>
+              {serviceVisits.length === 0 ? (
+                <p className="text-stone-600 text-sm py-8 text-center">No visits logged yet. Use "Quick Log" above or click "+ Log Visit" to add one.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-stone-800">
+                        {["Date", "Customer", "Service", "Amount", "Status", "Notes", ""].map(h => (
+                          <th key={h} className="text-left py-2 px-3 text-stone-500 text-xs uppercase tracking-wider font-semibold">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-800/40">
+                      {serviceVisits.map((v) => (
+                        <tr key={v.id} className="hover:bg-stone-800/30">
+                          <td className="py-2.5 px-3 text-stone-400">{v.date}</td>
+                          <td className="py-2.5 px-3 font-medium text-stone-200">{v.customers?.name || "—"}</td>
+                          <td className="py-2.5 px-3 text-stone-400">{v.service}</td>
+                          <td className="py-2.5 px-3 text-emerald-400 font-bold">${Number(v.amount).toLocaleString()}</td>
+                          <td className="py-2.5 px-3">
+                            <Badge color={v.status === "completed" ? "green" : v.status === "scheduled" ? "blue" : "amber"}>
+                              {v.status}
+                            </Badge>
+                          </td>
+                          <td className="py-2.5 px-3 text-stone-500 text-xs max-w-[160px] truncate">{v.notes}</td>
+                          <td className="py-2.5 px-3 flex gap-2">
+                            {v.status === "scheduled" && (
+                              <button onClick={async () => { const updated = await db.updateServiceVisit(v.id, { status: "completed" }); if (updated) await refreshServiceVisits(); }} className="text-emerald-500 hover:text-emerald-400 text-xs transition-colors">Complete</button>
+                            )}
+                            <button onClick={async () => { await db.deleteServiceVisit(v.id); await refreshServiceVisits(); }} className="text-stone-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+
+            {/* Add Visit Modal */}
+            {showAddVisit && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-stone-900 border border-stone-700 rounded-3xl w-full max-w-md shadow-2xl">
+                  <div className="px-6 pt-6 pb-4 border-b border-stone-800 flex items-center justify-between">
+                    <h2 className="text-lg font-black">Log Service Visit</h2>
+                    <button onClick={() => setShowAddVisit(false)} className="text-stone-500 hover:text-stone-300"><Icon name="x" size={18} /></button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Customer</label>
+                      <select value={newVisit.customer_id} onChange={e => {
+                        const cid = Number(e.target.value);
+                        const c = customers.find(cx => cx.id === cid);
+                        setNewVisit(p => ({...p, customer_id: cid, amount: c ? c.price : p.amount, service: c ? (c.service || "Mowing") : p.service }));
+                      }}
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600">
+                        <option value="">Select customer…</option>
+                        {customers.filter(c => c.status === "Active").map(c => <option key={c.id} value={c.id}>{c.name} — ${c.price}/{c.frequency}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Date</label>
+                      <input type="date" value={newVisit.date} onChange={e => setNewVisit(p => ({...p, date: e.target.value}))}
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Service</label>
+                        <select value={newVisit.service} onChange={e => setNewVisit(p => ({...p, service: e.target.value}))}
+                          className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600">
+                          {serviceTypes.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Amount ($)</label>
+                        <input type="number" step="0.01" value={newVisit.amount} onChange={e => setNewVisit(p => ({...p, amount: e.target.value}))} placeholder="0.00"
+                          className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Status</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {["completed", "scheduled", "skipped"].map(s => (
+                          <button key={s} onClick={() => setNewVisit(p => ({...p, status: s}))}
+                            className={`px-3 py-2 rounded-xl border text-xs font-bold capitalize transition-all ${
+                              newVisit.status === s
+                                ? s === "completed" ? "bg-emerald-900/40 border-emerald-600 text-emerald-300"
+                                  : s === "scheduled" ? "bg-blue-900/40 border-blue-600 text-blue-300"
+                                  : "bg-amber-900/40 border-amber-600 text-amber-300"
+                                : "bg-stone-800 border-stone-700 text-stone-400 hover:border-stone-500"}`}>
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Notes (optional)</label>
+                      <input type="text" value={newVisit.notes} onChange={e => setNewVisit(p => ({...p, notes: e.target.value}))} placeholder="e.g. Edged + trimmed"
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                    </div>
+                    <button onClick={async () => {
+                      if (newVisit.customer_id && newVisit.amount && Number(newVisit.amount) > 0) {
+                        const saved = await db.createServiceVisit(newVisit);
+                        if (saved) {
+                          await refreshServiceVisits();
+                        } else {
+                          setServiceVisits(prev => [...prev, { ...newVisit, id: Date.now(), amount: Number(newVisit.amount) }]);
+                        }
+                        setNewVisit({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "" });
+                        setShowAddVisit(false);
+                      }
+                    }} disabled={!newVisit.customer_id || !newVisit.amount || Number(newVisit.amount) <= 0}
+                      className="w-full bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-all">
+                      Log Visit
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* SCHEDULE */}
         {/* ── PAYMENTS TAB ── */}
