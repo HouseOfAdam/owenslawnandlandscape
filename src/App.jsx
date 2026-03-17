@@ -1524,6 +1524,7 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
   // ── Customer Rate Editing ─────────────────────────────────
   const [editingCustomerId, setEditingCustomerId] = useState(null);
   const [editCustomerFields, setEditCustomerFields] = useState({});
+  const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null); // customer id
 
   const toggleCustomer = (id) => setSelectedCustomers(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const allSelected = selectedCustomers.length === customers.length;
@@ -2236,8 +2237,23 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
                         }} className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-lg font-semibold transition-all">Save</button>
                         <button onClick={() => { setEditingCustomerId(null); setEditCustomerFields({}); }} className="text-xs text-stone-500 hover:text-stone-300 px-2 py-1 transition-colors">Cancel</button>
                       </div>
+                    ) : confirmDeleteCustomer === c.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-red-400">Remove?</span>
+                        <button onClick={async () => {
+                          await db.deleteCustomer(c.id);
+                          setConfirmDeleteCustomer(null);
+                          if (onRefreshCustomers) onRefreshCustomers();
+                        }} className="text-xs bg-red-700 hover:bg-red-600 text-white px-2.5 py-1 rounded-lg font-semibold transition-all">Yes</button>
+                        <button onClick={() => setConfirmDeleteCustomer(null)} className="text-xs text-stone-500 hover:text-stone-300 px-2 py-1 transition-colors">No</button>
+                      </div>
                     ) : (
-                      <Badge color="green">{c.status}</Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge color="green">{c.status}</Badge>
+                        <button onClick={() => setConfirmDeleteCustomer(c.id)} className="text-stone-700 hover:text-red-400 transition-colors" title="Remove customer">
+                          <Icon name="x" size={12} />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

@@ -171,6 +171,16 @@ export async function createCustomer(customer) {
   return data;
 }
 
+export async function deleteCustomer(id) {
+  if (!isOnline()) return null;
+  const { error } = await supabase
+    .from("customers")
+    .delete()
+    .eq("id", id);
+  if (error) { console.error("deleteCustomer:", error); return null; }
+  return true;
+}
+
 // ============================================================
 // ESTIMATES (for Phase 2 — AI estimate storage)
 // ============================================================
