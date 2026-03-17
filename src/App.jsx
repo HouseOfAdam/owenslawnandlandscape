@@ -47,15 +47,7 @@ const CUSTOMERS = [
   { id: 9, name: "Herb Hokey",          email: "",                              phone: "317-555-0109", address: "918 Briarwood Dr.",       service: "Mowing", price: 25,  frequency: "Weekly",     status: "Active", balance: 0, referralCode: "HER2025",  token: "hh3b9e4c" },
 ];
 
-const INITIAL_ADMIN_INVOICES = [
-  { id: "INV-003", customer: "Ron Cooper",         customerId: 1, date: "Mar 6, 2026",  due: "Mar 16, 2026",  amount: 105, status: "Unpaid", services: ["Weekly Mowing x3", "Spring Pre-Emergent"] },
-  { id: "INV-004", customer: "Kyle Lemon",          customerId: 2, date: "Mar 6, 2026",  due: "Mar 16, 2026",  amount: 360, status: "Unpaid", services: ["Biweekly Mowing x3"] },
-  { id: "INV-005", customer: "Deborah Whittemore",  customerId: 3, date: "Mar 6, 2026",  due: "Mar 16, 2026",  amount: 75,  status: "Unpaid", services: ["Weekly Mowing x3"] },
-  { id: "INV-006", customer: "Jason Hage",          customerId: 5, date: "Feb 28, 2026", due: "Mar 10, 2026",  amount: 120, status: "Unpaid", services: ["Weekly Mowing x4"] },
-  { id: "INV-007", customer: "Ron Cooper",          customerId: 1, date: "Feb 28, 2026", due: "Mar 10, 2026",  amount: 120, status: "Paid",   services: ["Weekly Mowing x4"], paidOn: "Mar 3, 2026",  paidMethod: "Venmo" },
-  { id: "INV-008", customer: "Cory Rehs",           customerId: 6, date: "Feb 28, 2026", due: "Mar 10, 2026",  amount: 120, status: "Paid",   services: ["Weekly Mowing x4"], paidOn: "Mar 5, 2026",  paidMethod: "Check" },
-  { id: "INV-009", customer: "Dave Mauer",          customerId: 7, date: "Feb 28, 2026", due: "Mar 10, 2026",  amount: 130, status: "Paid",   services: ["Mowing", "Trimming & Edging"], paidOn: "Mar 1, 2026", paidMethod: "Cash" },
-];
+const INITIAL_ADMIN_INVOICES = [];
 
 
 const FINANCIALS = {
@@ -2926,39 +2918,220 @@ const AdminScheduleCalendar = () => {
   );
 };
 
-const AdminPaymentsTab = ({ adminInvoices, setMarkPaidModal, setMarkPaidMethod }) => {
-  const unpaidAll   = adminInvoices.filter(inv => inv.status === "Unpaid");
-  const paidAll     = adminInvoices.filter(inv => inv.status === "Paid");
-  const totalUnpaid = unpaidAll.reduce((s, inv) => s + inv.amount, 0);
-  const totalPaid   = paidAll.reduce((s, inv) => s + inv.amount, 0);
+const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshInvoices, onRefreshVisits }) => {
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); d.setDate(1); return d.toISOString().slice(0,10); });
+  const [dateTo, setDateTo] = useState(() => { const d = new Date(); d.setDate(0); return d.toISOString().slice(0,10); });
+  const [selectedVisitIds, setSelectedVisitIds] = useState([]);
+  const [invoiceNotes, setInvoiceNotes] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [markPaidModal, setMarkPaidModal] = useState(null);
+  const [markPaidMethod, setMarkPaidMethod] = useState("Cash");
+  const [viewInvoice, setViewInvoice] = useState(null);
+
+  const unpaid = invoices.filter(inv => inv.status === "unpaid");
+  const paid = invoices.filter(inv => inv.status === "paid");
+  const totalUnpaid = unpaid.reduce((s, inv) => s + Number(inv.total), 0);
+  const totalPaid = paid.reduce((s, inv) => s + Number(inv.total), 0);
+
+  // Get uninvoiced completed visits for the selected customer & date range
+  const invoicedVisitIds = new Set(invoices.flatMap(inv => inv.visit_ids || []));
+  const eligibleVisits = serviceVisits
+    .filter(v => v.status === "completed")
+    .filter(v => !selectedCustomer || v.customer_id === Number(selectedCustomer))
+    .filter(v => v.date >= dateFrom && v.date <= dateTo)
+    .filter(v => !invoicedVisitIds.has(v.id));
+
+  const toggleVisit = (id) => {
+    setSelectedVisitIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const selectAllVisible = () => {
+    const ids = eligibleVisits.map(v => v.id);
+    setSelectedVisitIds(ids);
+  };
+  const selectedTotal = eligibleVisits.filter(v => selectedVisitIds.includes(v.id)).reduce((s, v) => s + Number(v.amount), 0);
+
+  const handleCreateInvoice = async () => {
+    if (selectedVisitIds.length === 0 || !selectedCustomer) return;
+    setCreating(true);
+    const selected = eligibleVisits.filter(v => selectedVisitIds.includes(v.id));
+
+    // Build line items by grouping same service
+    const grouped = {};
+    selected.forEach(v => {
+      const key = `${v.service}|${Number(v.amount).toFixed(2)}`;
+      if (!grouped[key]) grouped[key] = { service: v.service, rate: Number(v.amount), count: 0, dates: [] };
+      grouped[key].count++;
+      grouped[key].dates.push(v.date);
+    });
+    const lineItems = Object.values(grouped).map(g => ({
+      description: g.count > 1 ? `${g.service} x${g.count}` : g.service,
+      dates: g.dates,
+      rate: g.rate,
+      quantity: g.count,
+      amount: g.rate * g.count,
+    }));
+
+    const total = lineItems.reduce((s, li) => s + li.amount, 0);
+    const invNum = await db.getNextInvoiceNumber();
+
+    const invoice = await db.createInvoice({
+      invoice_number: invNum,
+      customer_id: Number(selectedCustomer),
+      date_issued: new Date().toISOString().slice(0, 10),
+      date_due: new Date().toISOString().slice(0, 10), // Due on receipt
+      line_items: lineItems,
+      subtotal: total,
+      total: total,
+      status: "unpaid",
+      notes: invoiceNotes,
+      visit_ids: selectedVisitIds,
+    });
+
+    if (invoice) {
+      await onRefreshInvoices();
+      setShowCreateInvoice(false);
+      setSelectedVisitIds([]);
+      setInvoiceNotes("");
+      setSelectedCustomer("");
+    }
+    setCreating(false);
+  };
+
+  const handleMarkPaid = async (invoiceId, method) => {
+    await db.updateInvoice(invoiceId, {
+      status: "paid",
+      paid_on: new Date().toISOString().slice(0, 10),
+      paid_method: method,
+    });
+    await onRefreshInvoices();
+    setMarkPaidModal(null);
+  };
+
+  const handleVoidInvoice = async (invoiceId) => {
+    await db.updateInvoice(invoiceId, { status: "void" });
+    await onRefreshInvoices();
+  };
+
+  // Print/PDF invoice
+  const printInvoice = (inv) => {
+    const cust = inv.customers || {};
+    const items = inv.line_items || [];
+    const w = window.open("", "_blank", "width=800,height=1000");
+    w.document.write(`<!DOCTYPE html><html><head><title>Invoice ${inv.invoice_number}</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: 'Inter', sans-serif; color: #1a1a1a; padding: 40px; max-width: 800px; margin: 0 auto; }
+      .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 2px solid #1a4a2e; }
+      .brand h1 { font-size: 22px; font-weight: 900; color: #1a4a2e; } .brand p { font-size: 11px; color: #666; margin-top: 2px; }
+      .inv-details { text-align: right; } .inv-details h2 { font-size: 28px; font-weight: 900; color: #1a4a2e; } .inv-details p { font-size: 12px; color: #666; margin-top: 2px; }
+      .parties { display: flex; justify-content: space-between; margin-bottom: 30px; }
+      .party h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; margin-bottom: 6px; font-weight: 700; }
+      .party p { font-size: 13px; color: #333; line-height: 1.6; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+      th { text-align: left; padding: 10px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #999; font-weight: 700; border-bottom: 2px solid #eee; }
+      td { padding: 12px 12px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+      .amount { text-align: right; font-weight: 700; } .total-row td { border-top: 2px solid #1a4a2e; font-weight: 800; font-size: 15px; }
+      .total-row .amount { color: #1a4a2e; }
+      .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 11px; color: #999; text-align: center; }
+      .status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+      .status.unpaid { background: #fffbeb; color: #d97706; } .status.paid { background: #e6f2eb; color: #1a4a2e; }
+      .notes { margin-top: 20px; padding: 15px; background: #f9f8f6; border-radius: 8px; font-size: 12px; color: #666; }
+      .payment-info { margin-top: 20px; font-size: 12px; color: #666; }
+      .payment-info strong { color: #333; }
+      @media print { body { padding: 20px; } button { display: none !important; } }
+    </style></head><body>
+      <div class="header">
+        <div class="brand">
+          <h1>Owen's Lawn + Landscape</h1>
+          <p>Bargersville, IN · (317) 868-4699</p>
+          <p>owenslawnandlandscape@gmail.com</p>
+        </div>
+        <div class="inv-details">
+          <h2>${inv.invoice_number}</h2>
+          <p>Issued: ${inv.date_issued}</p>
+          <p>Due: ${inv.date_due}</p>
+          <span class="status ${inv.status}">${inv.status}</span>
+        </div>
+      </div>
+      <div class="parties">
+        <div class="party">
+          <h3>Bill To</h3>
+          <p><strong>${cust.name || "Customer"}</strong></p>
+          ${cust.address ? `<p>${cust.address}</p>` : ""}
+          ${cust.email ? `<p>${cust.email}</p>` : ""}
+          ${cust.phone ? `<p>${cust.phone}</p>` : ""}
+        </div>
+        <div class="party" style="text-align: right;">
+          <h3>Payment Terms</h3>
+          <p>Due on receipt</p>
+          <p style="margin-top: 8px;"><strong>Accepted:</strong> Cash, Check, Venmo/Apple Pay</p>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th class="amount">Amount</th></tr></thead>
+        <tbody>
+          ${items.map(li => `<tr>
+            <td>${li.description}${li.dates && li.dates.length > 0 ? `<br><span style="font-size:10px;color:#999;">${li.dates.join(", ")}</span>` : ""}</td>
+            <td>${li.quantity || 1}</td>
+            <td>$${Number(li.rate).toFixed(2)}</td>
+            <td class="amount">$${Number(li.amount).toFixed(2)}</td>
+          </tr>`).join("")}
+          <tr class="total-row"><td colspan="3" style="text-align:right;">Total</td><td class="amount">$${Number(inv.total).toFixed(2)}</td></tr>
+        </tbody>
+      </table>
+      ${inv.notes ? `<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>` : ""}
+      ${inv.status === "paid" ? `<div class="payment-info"><strong>Paid:</strong> ${inv.paid_on || "—"} via ${inv.paid_method || "—"}</div>` : ""}
+      <div class="footer">
+        <p>Owen's Lawn + Landscape · Thank you for your business!</p>
+      </div>
+      <div style="text-align:center; margin-top:20px;">
+        <button onclick="window.print()" style="background:#1a4a2e;color:white;border:none;padding:10px 24px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">Print / Save as PDF</button>
+      </div>
+    </body></html>`);
+    w.document.close();
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-extrabold">Payments</h1>
-          <p className="text-stone-500 text-sm mt-0.5">Track invoices, mark received payments, and monitor outstanding balances</p>
+          <h1 className="text-2xl font-extrabold">Accounts Receivable</h1>
+          <p className="text-stone-500 text-sm mt-0.5">Generate invoices from service visits, track payments</p>
         </div>
+        <button onClick={() => setShowCreateInvoice(true)} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-all">
+          + Create Invoice
+        </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-7">
+      {/* Summary cards */}
+      <div className="grid grid-cols-4 gap-4 mb-7">
         <div className="bg-amber-950/30 border border-amber-800/40 rounded-2xl p-4">
           <div className="text-xs text-amber-500 uppercase tracking-wider font-semibold mb-1">Outstanding</div>
-          <div className="text-3xl font-black text-amber-300">${totalUnpaid}</div>
-          <div className="text-xs text-stone-500 mt-1">{unpaidAll.length} unpaid invoice{unpaidAll.length !== 1 ? "s" : ""}</div>
+          <div className="text-3xl font-black text-amber-300">${totalUnpaid.toFixed(2)}</div>
+          <div className="text-xs text-stone-500 mt-1">{unpaid.length} unpaid invoice{unpaid.length !== 1 ? "s" : ""}</div>
         </div>
         <div className="bg-emerald-950/20 border border-emerald-900/40 rounded-2xl p-4">
           <div className="text-xs text-emerald-500 uppercase tracking-wider font-semibold mb-1">Collected (2026)</div>
-          <div className="text-3xl font-black text-emerald-300">${totalPaid}</div>
-          <div className="text-xs text-stone-500 mt-1">{paidAll.length} paid invoice{paidAll.length !== 1 ? "s" : ""}</div>
+          <div className="text-3xl font-black text-emerald-300">${totalPaid.toFixed(2)}</div>
+          <div className="text-xs text-stone-500 mt-1">{paid.length} paid</div>
         </div>
         <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4">
           <div className="text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1">Total Invoiced</div>
-          <div className="text-3xl font-black text-stone-200">${totalUnpaid + totalPaid}</div>
-          <div className="text-xs text-stone-500 mt-1">{adminInvoices.length} total invoices</div>
+          <div className="text-3xl font-black text-stone-200">${(totalUnpaid + totalPaid).toFixed(2)}</div>
+          <div className="text-xs text-stone-500 mt-1">{invoices.length} total</div>
+        </div>
+        <div className="bg-blue-950/20 border border-blue-900/40 rounded-2xl p-4">
+          <div className="text-xs text-blue-500 uppercase tracking-wider font-semibold mb-1">Uninvoiced Visits</div>
+          <div className="text-3xl font-black text-blue-300">{serviceVisits.filter(v => v.status === "completed" && !invoicedVisitIds.has(v.id)).length}</div>
+          <div className="text-xs text-stone-500 mt-1">ready to bill</div>
         </div>
       </div>
 
-      {unpaidAll.length > 0 && (
+      {/* Outstanding Invoices */}
+      {unpaid.length > 0 && (
         <div className="mb-7">
           <h2 className="text-sm font-bold uppercase tracking-wider text-amber-500 mb-3 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Outstanding Invoices
@@ -2967,30 +3140,33 @@ const AdminPaymentsTab = ({ adminInvoices, setMarkPaidModal, setMarkPaidMethod }
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-amber-950/20 border-b border-amber-800/30">
-                  {["Invoice","Customer","Services","Issued","Due","Amount","Action"].map(h => (
+                  {["Invoice","Customer","Services","Issued","Amount","Actions"].map(h => (
                     <th key={h} className="text-left py-3 px-4 text-xs text-stone-500 uppercase tracking-wider font-semibold">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-800/40">
-                {unpaidAll.map(inv => (
+                {unpaid.map(inv => (
                   <tr key={inv.id} className="hover:bg-stone-800/20 transition-colors">
-                    <td className="py-3 px-4 font-mono text-xs text-stone-400">{inv.id}</td>
+                    <td className="py-3 px-4 font-mono text-xs text-stone-400">{inv.invoice_number}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-emerald-900/30 rounded-full flex items-center justify-center text-emerald-400 text-[10px] font-bold shrink-0">{inv.customer[0]}</div>
-                        <span className="font-semibold text-stone-200 text-xs">{inv.customer}</span>
+                        <div className="w-6 h-6 bg-emerald-900/30 rounded-full flex items-center justify-center text-emerald-400 text-[10px] font-bold shrink-0">{(inv.customers?.name || "?")[0]}</div>
+                        <span className="font-semibold text-stone-200 text-xs">{inv.customers?.name || "—"}</span>
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-xs text-stone-500 max-w-[160px]">{inv.services.join(", ")}</td>
-                    <td className="py-3 px-4 text-xs text-stone-500">{inv.date}</td>
-                    <td className="py-3 px-4 text-xs text-amber-500 font-semibold">{inv.due}</td>
-                    <td className="py-3 px-4 text-amber-300 font-black">${inv.amount}</td>
+                    <td className="py-3 px-4 text-xs text-stone-500 max-w-[200px]">{(inv.line_items || []).map(li => li.description).join(", ")}</td>
+                    <td className="py-3 px-4 text-xs text-stone-500">{inv.date_issued}</td>
+                    <td className="py-3 px-4 text-amber-300 font-black">${Number(inv.total).toFixed(2)}</td>
                     <td className="py-3 px-4">
-                      <button onClick={() => { setMarkPaidModal(inv); setMarkPaidMethod("Cash"); }}
-                        className="bg-emerald-800/50 hover:bg-emerald-700 text-emerald-300 text-xs font-bold px-3 py-1.5 rounded-xl transition-all whitespace-nowrap">
-                        ✓ Mark Paid
-                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setMarkPaidModal(inv); setMarkPaidMethod("Cash"); }}
+                          className="bg-emerald-800/50 hover:bg-emerald-700 text-emerald-300 text-xs font-bold px-3 py-1.5 rounded-xl transition-all whitespace-nowrap">
+                          ✓ Mark Paid
+                        </button>
+                        <button onClick={() => printInvoice(inv)} className="text-stone-500 hover:text-stone-300 text-xs transition-colors">PDF</button>
+                        <button onClick={() => handleVoidInvoice(inv.id)} className="text-stone-600 hover:text-red-400 text-xs transition-colors">Void</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -3000,48 +3176,208 @@ const AdminPaymentsTab = ({ adminInvoices, setMarkPaidModal, setMarkPaidMethod }
         </div>
       )}
 
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-wider text-emerald-600 mb-3 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" /> Collected Payments
-        </h2>
-        <div className="rounded-2xl border border-stone-800 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-stone-900/80 border-b border-stone-800">
-                {["Invoice","Customer","Services","Amount","Paid On","Method"].map(h => (
-                  <th key={h} className="text-left py-3 px-4 text-xs text-stone-500 uppercase tracking-wider font-semibold">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-800/40">
-              {paidAll.map(inv => (
-                <tr key={inv.id} className="hover:bg-stone-800/20 transition-colors opacity-75">
-                  <td className="py-3 px-4 font-mono text-xs text-stone-500">{inv.id}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 bg-stone-800 rounded-full flex items-center justify-center text-stone-400 text-[10px] font-bold shrink-0">{inv.customer[0]}</div>
-                      <span className="text-stone-300 text-xs">{inv.customer}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-xs text-stone-600">{inv.services.join(", ")}</td>
-                  <td className="py-3 px-4 text-emerald-400 font-bold">${inv.amount}</td>
-                  <td className="py-3 px-4 text-xs text-stone-500">{inv.paidOn || "—"}</td>
-                  <td className="py-3 px-4">
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${
-                      inv.paidMethod === "Venmo"  ? "bg-blue-900/40 text-blue-400" :
-                      inv.paidMethod === "Cash"   ? "bg-emerald-900/30 text-emerald-400" :
-                      inv.paidMethod === "Check"  ? "bg-stone-700 text-stone-300" :
-                      inv.paidMethod === "Card"   ? "bg-purple-900/40 text-purple-400" :
-                      "bg-stone-800 text-stone-400"}`}>
-                      {inv.paidMethod || "—"}
-                    </span>
-                  </td>
+      {/* Collected Payments */}
+      {paid.length > 0 && (
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-emerald-600 mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" /> Collected Payments
+          </h2>
+          <div className="rounded-2xl border border-stone-800 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-stone-900/80 border-b border-stone-800">
+                  {["Invoice","Customer","Services","Amount","Paid On","Method",""].map(h => (
+                    <th key={h} className="text-left py-3 px-4 text-xs text-stone-500 uppercase tracking-wider font-semibold">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-stone-800/40">
+                {paid.map(inv => (
+                  <tr key={inv.id} className="hover:bg-stone-800/20 transition-colors opacity-75">
+                    <td className="py-3 px-4 font-mono text-xs text-stone-500">{inv.invoice_number}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-stone-800 rounded-full flex items-center justify-center text-stone-400 text-[10px] font-bold shrink-0">{(inv.customers?.name || "?")[0]}</div>
+                        <span className="text-stone-300 text-xs">{inv.customers?.name || "—"}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-xs text-stone-600">{(inv.line_items || []).map(li => li.description).join(", ")}</td>
+                    <td className="py-3 px-4 text-emerald-400 font-bold">${Number(inv.total).toFixed(2)}</td>
+                    <td className="py-3 px-4 text-xs text-stone-500">{inv.paid_on || "—"}</td>
+                    <td className="py-3 px-4">
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${
+                        inv.paid_method === "Venmo/ApplePay" ? "bg-blue-900/40 text-blue-400" :
+                        inv.paid_method === "Cash"           ? "bg-emerald-900/30 text-emerald-400" :
+                        inv.paid_method === "Check"          ? "bg-stone-700 text-stone-300" :
+                        "bg-stone-800 text-stone-400"}`}>
+                        {inv.paid_method || "—"}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <button onClick={() => printInvoice(inv)} className="text-stone-500 hover:text-stone-300 text-xs transition-colors">PDF</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {invoices.length === 0 && (
+        <Card>
+          <div className="text-center py-12">
+            <Icon name="invoice" size={40} color="#57534e" />
+            <h3 className="font-bold text-lg mt-3 mb-1">No Invoices Yet</h3>
+            <p className="text-stone-500 text-sm mb-4">Log service visits, then create invoices from completed work.</p>
+            <button onClick={() => setShowCreateInvoice(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all">
+              + Create First Invoice
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {/* ── CREATE INVOICE MODAL ── */}
+      {showCreateInvoice && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-stone-900 border border-stone-700 rounded-3xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="px-6 pt-6 pb-4 border-b border-stone-800 flex items-center justify-between sticky top-0 bg-stone-900 z-10 rounded-t-3xl">
+              <div>
+                <h2 className="text-lg font-black">Create Invoice</h2>
+                <p className="text-stone-500 text-xs mt-0.5">Select completed visits to include</p>
+              </div>
+              <button onClick={() => setShowCreateInvoice(false)} className="text-stone-500 hover:text-stone-300"><Icon name="x" size={18} /></button>
+            </div>
+            <div className="p-6 space-y-5">
+              {/* Customer & date range */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Customer</label>
+                  <select value={selectedCustomer} onChange={e => { setSelectedCustomer(e.target.value); setSelectedVisitIds([]); }}
+                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600">
+                    <option value="">All customers</option>
+                    {customers.filter(c => c.status === "Active").map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">From</label>
+                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                </div>
+                <div>
+                  <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">To</label>
+                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                </div>
+              </div>
+
+              {/* Eligible visits */}
+              {!selectedCustomer ? (
+                <div className="text-stone-500 text-sm py-6 text-center bg-stone-800/30 rounded-xl">Select a customer to see uninvoiced visits</div>
+              ) : eligibleVisits.length === 0 ? (
+                <div className="text-stone-500 text-sm py-6 text-center bg-stone-800/30 rounded-xl">No uninvoiced completed visits for this customer in the selected date range</div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-stone-500 uppercase tracking-wider font-semibold">{eligibleVisits.length} uninvoiced visit{eligibleVisits.length !== 1 ? "s" : ""}</span>
+                    <button onClick={selectAllVisible} className="text-xs text-emerald-500 hover:text-emerald-400 transition-colors">Select all</button>
+                  </div>
+                  <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                    {eligibleVisits.map(v => {
+                      const checked = selectedVisitIds.includes(v.id);
+                      return (
+                        <button key={v.id} onClick={() => toggleVisit(v.id)}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-all text-left ${
+                            checked ? "bg-emerald-900/30 border-emerald-700 text-emerald-200" : "bg-stone-800/50 border-stone-700 text-stone-300 hover:border-stone-600"}`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${checked ? "bg-emerald-600 border-emerald-600" : "border-stone-600"}`}>
+                              {checked && <Icon name="check" size={10} color="white" />}
+                            </div>
+                            <div>
+                              <span className="font-medium">{v.date}</span>
+                              <span className="text-stone-500 mx-2">·</span>
+                              <span>{v.service}</span>
+                              {v.notes && <span className="text-stone-600 text-xs ml-2">({v.notes})</span>}
+                            </div>
+                          </div>
+                          <span className={`font-bold ${checked ? "text-emerald-400" : "text-stone-400"}`}>${Number(v.amount).toFixed(2)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Invoice Notes (optional)</label>
+                <input type="text" value={invoiceNotes} onChange={e => setInvoiceNotes(e.target.value)} placeholder="e.g. Thank you for your business!"
+                  className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+              </div>
+
+              {/* Total & submit */}
+              {selectedVisitIds.length > 0 && (
+                <div className="flex items-center justify-between bg-stone-800/50 rounded-xl px-4 py-3 border border-stone-700">
+                  <div>
+                    <span className="text-stone-400 text-sm">{selectedVisitIds.length} visit{selectedVisitIds.length !== 1 ? "s" : ""} selected</span>
+                  </div>
+                  <div className="text-2xl font-black text-emerald-400">${selectedTotal.toFixed(2)}</div>
+                </div>
+              )}
+
+              <button onClick={handleCreateInvoice} disabled={creating || selectedVisitIds.length === 0 || !selectedCustomer}
+                className="w-full bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-all">
+                {creating ? "Creating…" : `Create Invoice — $${selectedTotal.toFixed(2)}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MARK PAID MODAL ── */}
+      {markPaidModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-stone-900 border border-stone-700 rounded-3xl w-full max-w-sm shadow-2xl">
+            <div className="px-6 pt-6 pb-4 border-b border-stone-800 flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-black">Mark Invoice Paid</h2>
+                <p className="text-stone-500 text-xs mt-0.5">{markPaidModal.invoice_number} · {markPaidModal.customers?.name || "Customer"}</p>
+              </div>
+              <button onClick={() => setMarkPaidModal(null)} className="text-stone-600 hover:text-stone-300 text-xl leading-none mt-1 transition-colors">✕</button>
+            </div>
+            <div className="px-6 py-4 border-b border-stone-800 flex items-center justify-between">
+              <span className="text-stone-400 text-sm">Amount</span>
+              <span className="text-2xl font-extrabold text-emerald-300">${Number(markPaidModal.total).toFixed(2)}</span>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-xs text-stone-500 mb-3 uppercase tracking-wider font-semibold">How did they pay?</p>
+              <div className="grid grid-cols-3 gap-2 mb-5">
+                {[
+                  { method: "Cash",          emoji: "💵" },
+                  { method: "Check",         emoji: "📝" },
+                  { method: "Venmo/ApplePay",emoji: "💙" },
+                ].map(({ method, emoji }) => (
+                  <button key={method} onClick={() => setMarkPaidMethod(method)}
+                    className={`flex items-center gap-2 px-3 py-3 rounded-xl border text-sm font-bold transition-all ${
+                      markPaidMethod === method
+                        ? "bg-emerald-900/40 border-emerald-600 text-emerald-300"
+                        : "bg-stone-800 border-stone-700 text-stone-400 hover:border-stone-500"}`}>
+                    <span>{emoji}</span> {method}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => handleMarkPaid(markPaidModal.id, markPaidMethod)}
+                className="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-black py-3.5 rounded-2xl text-sm transition-all">
+                ✓ Confirm — Paid via {markPaidMethod}
+              </button>
+              <button onClick={() => setMarkPaidModal(null)}
+                className="w-full mt-2 text-stone-600 hover:text-stone-400 text-sm py-2 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -3052,9 +3388,8 @@ const AdminPortal = ({ onLogout }) => {
   const [aiEstimate, setAiEstimate] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [savedEstimates, setSavedEstimates] = useState([]);
-  const [adminInvoices, setAdminInvoices] = useState(INITIAL_ADMIN_INVOICES);
-  const [markPaidModal, setMarkPaidModal] = useState(null); // invoice object
-  const [markPaidMethod, setMarkPaidMethod] = useState("Cash");
+  // Invoices from Supabase
+  const [invoices, setInvoices] = useState([]);
   // Load customers from Supabase (fall back to hardcoded seed data when offline)
   const [customers, setCustomers] = useState(CUSTOMERS);
 
@@ -3067,6 +3402,16 @@ const AdminPortal = ({ onLogout }) => {
   useEffect(() => {
     refreshCustomers();
   }, [refreshCustomers]);
+
+  // Fetch invoices from Supabase on mount
+  const refreshInvoices = useCallback(async () => {
+    const data = await db.fetchInvoices();
+    if (data) setInvoices(data);
+  }, []);
+
+  useEffect(() => {
+    refreshInvoices();
+  }, [refreshInvoices]);
 
   // Navigate to estimator tab pre-filled with lead data
   const handleNavigateEstimator = useCallback(async (leadData) => {
@@ -3091,15 +3436,6 @@ const AdminPortal = ({ onLogout }) => {
     setAiEstimate(null);
     setTab("estimator");
   }, []);
-
-  const markInvoicePaid = (invoiceId, method) => {
-    setAdminInvoices(prev => prev.map(inv =>
-      inv.id === invoiceId
-        ? { ...inv, status: "Paid", paidOn: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), paidMethod: method }
-        : inv
-    ));
-    setMarkPaidModal(null);
-  };
 
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -3189,7 +3525,7 @@ const AdminPortal = ({ onLogout }) => {
   const tabs = [
     { id: "dashboard",  label: "Dashboard",            icon: "chart" },
     { id: "crm",        label: "CRM",                  icon: "users" },
-    { id: "payments",   label: "Payments",             icon: "dollar" },
+    { id: "ar",          label: "Accounts Receivable",  icon: "invoice" },
     { id: "expenses",   label: "Expense Tracker",      icon: "clipboard" },
     { id: "visits",     label: "Service Visits",       icon: "check" },
     { id: "schedule",   label: "Schedule & Routes",    icon: "map" },
@@ -3546,55 +3882,8 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         )}
 
         {/* SCHEDULE */}
-        {/* ── PAYMENTS TAB ── */}
-        {tab === "payments" && <AdminPaymentsTab adminInvoices={adminInvoices} setMarkPaidModal={setMarkPaidModal} setMarkPaidMethod={setMarkPaidMethod} />}
-
-
-        {/* ── MARK PAID MODAL ── */}
-        {markPaidModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-stone-900 border border-stone-700 rounded-3xl w-full max-w-sm shadow-2xl">
-              <div className="px-6 pt-6 pb-4 border-b border-stone-800 flex items-start justify-between">
-                <div>
-                  <h2 className="text-lg font-black">Mark Invoice Paid</h2>
-                  <p className="text-stone-500 text-xs mt-0.5">{markPaidModal.id} · {markPaidModal.customer}</p>
-                </div>
-                <button onClick={() => setMarkPaidModal(null)} className="text-stone-600 hover:text-stone-300 text-xl leading-none mt-1 transition-colors">✕</button>
-              </div>
-              <div className="px-6 py-4 border-b border-stone-800 flex items-center justify-between">
-                <span className="text-stone-400 text-sm">Amount</span>
-                <span className="text-2xl font-extrabold text-emerald-300">${markPaidModal.amount}.00</span>
-              </div>
-              <div className="px-6 py-5">
-                <p className="text-xs text-stone-500 mb-3 uppercase tracking-wider font-semibold">How did they pay?</p>
-                <div className="grid grid-cols-2 gap-2 mb-5">
-                  {[
-                    { method: "Cash",   emoji: "💵" },
-                    { method: "Check",  emoji: "📝" },
-                    { method: "Venmo",  emoji: "💙" },
-                    { method: "Card",   emoji: "💳" },
-                  ].map(({ method, emoji }) => (
-                    <button key={method} onClick={() => setMarkPaidMethod(method)}
-                      className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-bold transition-all ${
-                        markPaidMethod === method
-                          ? "bg-emerald-900/40 border-emerald-600 text-emerald-300"
-                          : "bg-stone-800 border-stone-700 text-stone-400 hover:border-stone-500"}`}>
-                      <span>{emoji}</span> {method}
-                    </button>
-                  ))}
-                </div>
-                <button onClick={() => markInvoicePaid(markPaidModal.id, markPaidMethod)}
-                  className="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-black py-3.5 rounded-2xl text-sm transition-all">
-                  ✓ Confirm — Mark as Paid via {markPaidMethod}
-                </button>
-                <button onClick={() => setMarkPaidModal(null)}
-                  className="w-full mt-2 text-stone-600 hover:text-stone-400 text-sm py-2 transition-colors">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ── ACCOUNTS RECEIVABLE TAB ── */}
+        {tab === "ar" && <AccountsReceivableTab customers={customers} serviceVisits={serviceVisits} invoices={invoices} onRefreshInvoices={refreshInvoices} onRefreshVisits={refreshServiceVisits} />}
 
         {tab === "schedule" && <AdminScheduleCalendar />}
 

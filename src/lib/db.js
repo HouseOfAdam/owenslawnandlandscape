@@ -293,3 +293,72 @@ export async function deleteServiceVisit(id) {
   if (error) { console.error("deleteServiceVisit:", error); return null; }
   return true;
 }
+
+// ============================================================
+// INVOICES — generated from service visits
+// ============================================================
+
+export async function fetchInvoices() {
+  if (!isOnline()) return [];
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("*, customers(name, email, phone, address)")
+    .order("created_at", { ascending: false });
+  if (error) { console.error("fetchInvoices:", error); return []; }
+  return data;
+}
+
+export async function createInvoice(invoice) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase
+    .from("invoices")
+    .insert([{
+      invoice_number: invoice.invoice_number,
+      customer_id: invoice.customer_id,
+      date_issued: invoice.date_issued,
+      date_due: invoice.date_due,
+      line_items: invoice.line_items,
+      subtotal: invoice.subtotal,
+      total: invoice.total,
+      status: invoice.status || "unpaid",
+      notes: invoice.notes || "",
+      visit_ids: invoice.visit_ids || [],
+    }])
+    .select("*, customers(name, email, phone, address)")
+    .single();
+  if (error) { console.error("createInvoice:", error); return null; }
+  return data;
+}
+
+export async function updateInvoice(id, updates) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase
+    .from("invoices")
+    .update(updates)
+    .eq("id", id)
+    .select("*, customers(name, email, phone, address)")
+    .single();
+  if (error) { console.error("updateInvoice:", error); return null; }
+  return data;
+}
+
+export async function deleteInvoice(id) {
+  if (!isOnline()) return null;
+  const { error } = await supabase
+    .from("invoices")
+    .delete()
+    .eq("id", id);
+  if (error) { console.error("deleteInvoice:", error); return null; }
+  return true;
+}
+
+export async function getNextInvoiceNumber() {
+  if (!isOnline()) return `INV-${Date.now()}`;
+  const { data, error } = await supabase.rpc("nextval", { seq_name: "invoice_number_seq" });
+  if (error) {
+    // Fallback: count existing invoices
+    const { count } = await supabase.from("invoices").select("*", { count: "exact", head: true });
+    return `INV-${String((count || 0) + 100).padStart(4, "0")}`;
+  }
+  return `INV-${String(data).padStart(4, "0")}`;
+}
