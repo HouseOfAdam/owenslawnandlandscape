@@ -2544,11 +2544,41 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
   for (let i = 0; i < offset; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
 
+  // Reference week for biweekly calculation (season start: Thu Apr 2, 2026)
+  const biweeklyRef = new Date(2026, 3, 2); // Apr 2, 2026 — Week 1 of season
+
+  const getWeekNumber = (date) => {
+    const d = new Date(date);
+    // Get Monday of this week
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    const ref = new Date(biweeklyRef);
+    ref.setHours(0, 0, 0, 0);
+    const weeksDiff = Math.round((d - ref) / (7 * 24 * 60 * 60 * 1000));
+    return weeksDiff;
+  };
+
   const getJobs = (date) => {
     if (!date) return [];
-    const dow = date.getDay(); // 0=Sun,1=Mon,...,6=Sat
+    const dow = date.getDay();
     const key = dow === 0 ? 7 : dow;
-    return dynamicRouteDays[key] || [];
+    const allJobs = dynamicRouteDays[key] || [];
+    const weekNum = getWeekNumber(date);
+    // Biweekly customers only show on even weeks from the reference date
+    return allJobs.filter(j => {
+      if (j.frequency === "Biweekly") return weekNum % 2 === 0;
+      if (j.frequency === "Monthly") {
+        // Monthly: only first occurrence of their route day each month
+        const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+        const firstDow = firstOfMonth.getDay();
+        const targetDow = dow;
+        let firstOccurrence = 1 + ((targetDow - firstDow + 7) % 7);
+        return date.getDate() === firstOccurrence;
+      }
+      return true; // Weekly and others show every week
+    });
   };
 
   const isToday = (date) => date && date.toDateString() === today.toDateString();
