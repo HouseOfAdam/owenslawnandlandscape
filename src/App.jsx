@@ -1433,13 +1433,18 @@ const scheduleChangeRequests = [
 // CRM TAB COMPONENT
 // ============================================================
 const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUSTOMERS, onRefreshCustomers, onNavigateEstimator }) => {
-  const [crmView, setCrmView] = useState("customers"); // customers | leads | lead-detail | season-open | season-close | changes
+  const [crmView, setCrmView] = useState("customers"); // customers | leads | lead-detail | messages | changes
   const [selectedCustomers, setSelectedCustomers] = useState(customers.map(c => c.id));
   const [sendMode, setSendMode] = useState("both"); // email | text | both
   const [sentStatus, setSentStatus] = useState(null); // null | "sending" | "sent"
-  const [openMsgType, setOpenMsgType] = useState("email");
-  const [closeMsgType, setCloseMsgType] = useState("email");
+  const [msgPreviewType, setMsgPreviewType] = useState("email");
   const [changeRequests, setChangeRequests] = useState(scheduleChangeRequests);
+  const [activeTemplate, setActiveTemplate] = useState("season-open");
+  const [editedEmail, setEditedEmail] = useState(null);
+  const [editedText, setEditedText] = useState(null);
+  const [customSubject, setCustomSubject] = useState("Message from Owen's Lawn + Landscape");
+  const [customEmailBody, setCustomEmailBody] = useState("");
+  const [customTextBody, setCustomTextBody] = useState("");
 
   // ── Lead state (from Supabase) ──────────────────────────────
   const [dbLeads, setDbLeads] = useState([]);
@@ -1467,12 +1472,6 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
 
   useEffect(() => { loadLeads(); }, [loadLeads]);
 
-  // Editable message overrides (null = use generated template)
-  const [editedOpenEmail, setEditedOpenEmail] = useState(null);
-  const [editedOpenText, setEditedOpenText] = useState(null);
-  const [editedCloseEmail, setEditedCloseEmail] = useState(null);
-  const [editedCloseText, setEditedCloseText] = useState(null);
-
   const routeDay = (id) => {
     const map = { 1:"Monday", 2:"Friday", 3:"Monday", 4:"Thursday", 5:"Friday", 6:"Friday", 7:"Friday", 8:"Monday", 9:"Monday" };
     return map[id] || "Friday";
@@ -1488,15 +1487,14 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
   const handleSend = async () => {
     setSentStatus("sending");
     try {
-      // Build recipients list with personalized messages
       const recipients = customers
         .filter(c => selectedCustomers.includes(c.id))
         .map(c => ({
           name: c.name,
           email: c.email || "",
           phone: c.phone || "",
-          message_email: crmView === "season-open" ? seasonOpenEmail(c) : seasonCloseEmail(c),
-          message_text: crmView === "season-open" ? seasonOpenText(c) : seasonCloseText(c),
+          message_email: editedEmail !== null ? editedEmail : getTemplateEmail(activeTemplate, c),
+          message_text: editedText !== null ? editedText : getTemplateText(activeTemplate, c),
         }));
 
       const { data: { session } } = await supabase.auth.getSession();
@@ -1656,6 +1654,137 @@ Owen's Lawn + Landscape
 
   const seasonCloseText = (customer) =>
 `Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — thanks for a great 2025! Re-enroll before Jan 15: get 1 FREE cut + 15% off any add-on in 2026. Log in to confirm your spot: ${shortLink(customer)}`;
+
+  // ── Additional Campaign Templates ─────────────────────────
+
+  const fallAerationEmail = (customer) =>
+`Subject: Fall Aeration & Overseeding — Lock In Your Spot 🌱
+
+Hi ${customer.name.split(" ")[0]},
+
+Fall is the best time to aerate and overseed your lawn. Core aeration reduces soil compaction, improves drainage, and gives your grass room to breathe — and overseeding fills in thin spots before winter.
+
+I'm booking aeration for September/October. Slots fill up fast, so let me know if you'd like to get on the schedule.
+
+  🌱  Core Aeration — $185 (up to 10,000 sq ft)
+  🌱  Aeration + Overseeding — $250
+
+Reply to this email or tap your portal link to request:
+${magicLink(customer)}
+
+— Owen
+Owen's Lawn + Landscape
+(317) 868-4699`;
+
+  const fallAerationText = (customer) =>
+`Hi ${customer.name.split(" ")[0]}! 🌱 Owen here — fall aeration season is coming up. Core aeration $185, aeration + overseeding $250. Spots are limited. Reply or log in to book: ${shortLink(customer)}`;
+
+  const fallCleanupEmail = (customer) =>
+`Subject: Fall Clean-Up — Get Your Yard Winter-Ready 🍂
+
+Hi ${customer.name.split(" ")[0]},
+
+Leaves are piling up! Let us handle the fall clean-up so your yard goes into winter in great shape.
+
+Our fall clean-up includes:
+  🍂  Full leaf removal (lawn, beds, and hardscapes)
+  🍂  Bed cleanup and cut-back
+  🍂  Final mow and trim of the season
+  🍂  Gutter blowout (add-on available)
+
+Pricing starts at $150 depending on property size. I'm scheduling now through mid-November.
+
+Reply here or log in to your portal to request:
+${magicLink(customer)}
+
+— Owen
+Owen's Lawn + Landscape
+(317) 868-4699`;
+
+  const fallCleanupText = (customer) =>
+`Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — scheduling fall clean-ups now! Leaf removal, bed cleanup, final mow. Starting at $150. Reply to book or log in: ${shortLink(customer)}`;
+
+  const firewoodEmail = (customer) =>
+`Subject: Firewood Available — Seasoned Hardwood Delivery 🪵
+
+Hi ${customer.name.split(" ")[0]},
+
+Getting ready for firepit season? I've got seasoned hardwood available for delivery.
+
+  🪵  Half cord — $125 (stacked and delivered)
+  🪵  Full cord — $225 (stacked and delivered)
+  🔥  Kindling bundle add-on — $15
+
+Free delivery for current customers in the Bargersville/Greenwood area. Let me know if you'd like to get some before it sells out!
+
+Reply to this email or call/text me:
+(317) 868-4699
+
+— Owen
+Owen's Lawn + Landscape`;
+
+  const firewoodText = (customer) =>
+`Hi ${customer.name.split(" ")[0]}! 🪵 Owen here — seasoned firewood available! Half cord $125, full cord $225, delivered & stacked. Free delivery for current customers. Reply or call (317) 868-4699 to order!`;
+
+  const customEmail = (customer) =>
+`Subject: ${customSubject}
+
+Hi ${customer.name.split(" ")[0]},
+
+${customEmailBody || "[ Write your message here ]"}
+
+— Owen
+Owen's Lawn + Landscape
+(317) 868-4699`;
+
+  const customText = (customer) =>
+customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your message ]`;
+
+  // ── Template Dispatcher ───────────────────────────────────
+  const MESSAGE_TEMPLATES = [
+    { id: "season-open",    label: "Season Opener",   icon: "🌿", color: "emerald", desc: "Welcome back for the new season with perks & portal link" },
+    { id: "season-close",   label: "Season Close",    icon: "🍂", color: "stone",   desc: "Thank customers, promote re-enrollment & referrals" },
+    { id: "fall-aeration",  label: "Fall Aeration",   icon: "🌱", color: "emerald", desc: "Promote aeration & overseeding services" },
+    { id: "fall-cleanup",   label: "Fall Clean-Up",   icon: "🍂", color: "amber",   desc: "Leaf removal, bed cleanup, final mow" },
+    { id: "firewood",       label: "Firewood",        icon: "🪵", color: "amber",   desc: "Seasoned hardwood delivery offer" },
+    { id: "custom",         label: "Custom Message",  icon: "✏️", color: "blue",    desc: "Write your own email and text from scratch" },
+  ];
+
+  const getTemplateEmail = (templateId, customer) => {
+    const map = {
+      "season-open": seasonOpenEmail,
+      "season-close": seasonCloseEmail,
+      "fall-aeration": fallAerationEmail,
+      "fall-cleanup": fallCleanupEmail,
+      "firewood": firewoodEmail,
+      "custom": customEmail,
+    };
+    return (map[templateId] || customEmail)(customer);
+  };
+
+  const getTemplateText = (templateId, customer) => {
+    const map = {
+      "season-open": seasonOpenText,
+      "season-close": seasonCloseText,
+      "fall-aeration": fallAerationText,
+      "fall-cleanup": fallCleanupText,
+      "firewood": firewoodText,
+      "custom": customText,
+    };
+    return (map[templateId] || customText)(customer);
+  };
+
+  const getTemplateSubject = (templateId) => {
+    const map = {
+      "season-open": "Welcome Back — Your 2026 Season Starts Soon! 🌿",
+      "season-close": "Thanks for a Great 2025 Season — See You in 2026! 🍂",
+      "fall-aeration": "Fall Aeration & Overseeding — Lock In Your Spot 🌱",
+      "fall-cleanup": "Fall Clean-Up — Get Your Yard Winter-Ready 🍂",
+      "firewood": "Firewood Available — Seasoned Hardwood Delivery 🪵",
+      "custom": customSubject,
+    };
+    return map[templateId] || customSubject;
+  };
 
   const activeCustomers = customers.filter(c => selectedCustomers.includes(c.id));
   const previewCustomer = customers[0];
@@ -1970,11 +2099,8 @@ Owen's Lawn + Landscape
               </span>
             )}
           </button>
-          <button onClick={() => setCrmView("season-open")} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all">
-            <Icon name="mail" size={15} /> Season Opener
-          </button>
-          <button onClick={() => setCrmView("season-close")} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-600 text-stone-200 px-4 py-2 rounded-xl text-sm font-semibold transition-all">
-            <Icon name="leaf" size={15} /> Season Close
+          <button onClick={() => setCrmView("messages")} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all">
+            <Icon name="mail" size={15} /> Message Center
           </button>
         </div>
       </div>
@@ -2137,265 +2263,177 @@ Owen's Lawn + Landscape
     </div>
   );
 
-  // ── Season Opener Campaign ─────────────────────────────────
-  if (crmView === "season-open") return (
+  // ── Customer Message Center ─────────────────────────────────
+  if (crmView === "messages") return (
     <div>
       <div className="flex items-center gap-3 mb-2">
-        <button onClick={() => { setCrmView("customers"); setSentStatus(null); }} className="text-stone-500 hover:text-stone-300 text-sm flex items-center gap-1 transition-colors">← CRM</button>
+        <button onClick={() => { setCrmView("customers"); setSentStatus(null); setEditedEmail(null); setEditedText(null); }} className="text-stone-500 hover:text-stone-300 text-sm flex items-center gap-1 transition-colors">← CRM</button>
         <span className="text-stone-700">/</span>
-        <h1 className="text-2xl font-extrabold">Season Opener Campaign</h1>
-        <Badge color="green">2026</Badge>
+        <h1 className="text-2xl font-extrabold">Customer Message Center</h1>
       </div>
-      <p className="text-stone-500 text-sm mb-7">Bulk email + text to returning customers. Includes their assigned route day, free cut offer, and portal link.</p>
+      <p className="text-stone-500 text-sm mb-5">Choose a template, customize if needed, and send via email, text, or both.</p>
 
       {sentStatus === "sent" ? (
         <Card className="text-center py-14 bg-emerald-950/30 border-emerald-900/50">
           <div className="w-16 h-16 bg-emerald-900/50 rounded-full flex items-center justify-center mx-auto mb-4"><Icon name="check" size={32} color="#34d399" /></div>
-          <h3 className="text-xl font-black text-emerald-300 mb-2">Campaign Sent!</h3>
-          <p className="text-stone-400 text-sm mb-1">{selectedCustomers.length} customers notified via {sendMode === "both" ? "email and text" : sendMode}</p>
-          <p className="text-stone-500 text-xs">{new Date().toLocaleDateString("en-US", {weekday:"long", year:"numeric", month:"long", day:"numeric"})}</p>
-          <button onClick={() => { setSentStatus(null); setCrmView("customers"); }} className="mt-6 border border-stone-700 hover:border-stone-500 text-stone-400 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all">
-            Back to CRM
+          <h3 className="text-xl font-black text-emerald-300 mb-2">Messages Sent!</h3>
+          <p className="text-stone-400 text-sm mb-1">{selectedCustomers.length} customer{selectedCustomers.length !== 1 ? "s" : ""} reached via {sendMode === "both" ? "email and text" : sendMode}</p>
+          <p className="text-stone-500 text-xs">Template: {MESSAGE_TEMPLATES.find(t => t.id === activeTemplate)?.label}</p>
+          <p className="text-stone-600 text-xs mt-1">{new Date().toLocaleDateString("en-US", {weekday:"long", year:"numeric", month:"long", day:"numeric"})}</p>
+          <button onClick={() => { setSentStatus(null); setEditedEmail(null); setEditedText(null); }} className="mt-6 border border-stone-700 hover:border-stone-500 text-stone-400 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all">
+            Send Another
           </button>
         </Card>
       ) : (
-        <div className="grid md:grid-cols-5 gap-6">
-          {/* LEFT: Config panel */}
-          <div className="md:col-span-2 space-y-5">
-            <Card>
-              <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="users" size={15} color="#34d399" /> Recipients</h3>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-stone-500">{selectedCustomers.length} of {customers.length} selected</span>
-                <button onClick={() => setSelectedCustomers(allSelected ? [] : customers.map(c=>c.id))}
-                  className="text-xs text-emerald-500 hover:text-emerald-400 transition-colors">
-                  {allSelected ? "Deselect all" : "Select all"}
-                </button>
-              </div>
-              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {customers.map(c => (
-                  <label key={c.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-all ${selectedCustomers.includes(c.id) ? "bg-emerald-900/20 border border-emerald-800/40" : "bg-stone-800/40 border border-transparent hover:border-stone-700"}`}>
-                    <input type="checkbox" checked={selectedCustomers.includes(c.id)} onChange={() => toggleCustomer(c.id)} className="accent-emerald-500" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold truncate">{c.name}</div>
-                      <div className="text-xs text-stone-500">{routeDay(c.id)}s · ${c.price}/visit</div>
-                    </div>
-                    {!c.email && <span title="No email on file"><Icon name="alert" size={12} color="#f59e0b" /></span>}
-                  </label>
-                ))}
-              </div>
-            </Card>
-
-            <Card>
-              <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="mail" size={15} color="#34d399" /> Send Via</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {[["email","Email"],["text","Text"],["both","Both"]].map(([val, label]) => (
-                  <button key={val} onClick={() => setSendMode(val)}
-                    className={`py-2.5 rounded-xl text-sm font-semibold border transition-all ${sendMode===val ? "bg-emerald-900/40 border-emerald-600 text-emerald-300" : "bg-stone-800 border-stone-700 text-stone-400 hover:border-stone-600"}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-stone-600 mt-3">⚠ Customers without email addresses will receive text only. {customers.filter(c=>!c.email).length} customers missing email.</p>
-            </Card>
-
-            <button onClick={handleSend} disabled={selectedCustomers.length === 0 || sentStatus === "sending"}
-              className="w-full bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all">
-              {sentStatus === "sending"
-                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Sending to {selectedCustomers.length} customers...</>
-                : <><Icon name="mail" size={18} /> Send to {selectedCustomers.length} Customer{selectedCustomers.length !== 1 ? "s" : ""}</>}
-            </button>
+        <div>
+          {/* Template selector */}
+          <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+            {MESSAGE_TEMPLATES.map(t => (
+              <button key={t.id} onClick={() => { setActiveTemplate(t.id); setEditedEmail(null); setEditedText(null); setSentStatus(null); }}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border whitespace-nowrap transition-all ${
+                  activeTemplate === t.id
+                    ? "bg-emerald-900/40 border-emerald-600 text-emerald-300"
+                    : "bg-stone-800 border-stone-700 text-stone-400 hover:border-stone-600"}`}>
+                <span>{t.icon}</span> {t.label}
+              </button>
+            ))}
           </div>
 
-          {/* RIGHT: Message preview */}
-          <div className="md:col-span-3">
-            <div className="flex gap-2 mb-4">
-              {["email","text"].map(t => (
-                <button key={t} onClick={() => setOpenMsgType(t)}
-                  className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${openMsgType===t ? "bg-stone-700 border-stone-500 text-stone-200" : "bg-stone-900 border-stone-800 text-stone-500 hover:border-stone-700"}`}>
-                  {t === "email" ? "📧 Email Preview" : "📱 Text Preview"}
-                </button>
-              ))}
-              <span className="ml-auto text-xs text-stone-600 self-center italic">Personalized per customer — showing {previewCustomer.name.split(" ")[0]}</span>
+          <div className="grid md:grid-cols-5 gap-6">
+            {/* LEFT: Config panel */}
+            <div className="md:col-span-2 space-y-5">
+              {/* Custom message fields */}
+              {activeTemplate === "custom" && (
+                <Card>
+                  <h3 className="font-bold mb-4 flex items-center gap-2">✏️ Custom Message</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Email Subject</label>
+                      <input type="text" value={customSubject} onChange={e => setCustomSubject(e.target.value)}
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Email Body</label>
+                      <textarea value={customEmailBody} onChange={e => setCustomEmailBody(e.target.value)} rows={5} placeholder="Write your email message here…"
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-emerald-600 resize-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Text Message</label>
+                      <textarea value={customTextBody} onChange={e => setCustomTextBody(e.target.value)} rows={3} placeholder="Write your text message here…"
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-emerald-600 resize-none" />
+                      <div className="text-xs text-stone-600 mt-1">{customTextBody.length} chars · {Math.ceil((customTextBody.length || 1) / 160)} SMS segment</div>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              <Card>
+                <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="users" size={15} color="#34d399" /> Recipients</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs text-stone-500">{selectedCustomers.length} of {customers.length} selected</span>
+                  <button onClick={() => setSelectedCustomers(allSelected ? [] : customers.map(c=>c.id))}
+                    className="text-xs text-emerald-500 hover:text-emerald-400 transition-colors">
+                    {allSelected ? "Deselect all" : "Select all"}
+                  </button>
+                </div>
+                <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                  {customers.map(c => (
+                    <label key={c.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-all ${selectedCustomers.includes(c.id) ? "bg-emerald-900/20 border border-emerald-800/40" : "bg-stone-800/40 border border-transparent hover:border-stone-700"}`}>
+                      <input type="checkbox" checked={selectedCustomers.includes(c.id)} onChange={() => toggleCustomer(c.id)} className="accent-emerald-500" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold truncate">{c.name}</div>
+                        <div className="text-xs text-stone-500">{routeDay(c.id)}s · ${c.price}/visit</div>
+                      </div>
+                      {!c.email && <span title="No email on file"><Icon name="alert" size={12} color="#f59e0b" /></span>}
+                    </label>
+                  ))}
+                </div>
+              </Card>
+
+              <Card>
+                <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="mail" size={15} color="#34d399" /> Send Via</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {[["email","Email"],["text","Text"],["both","Both"]].map(([val, label]) => (
+                    <button key={val} onClick={() => setSendMode(val)}
+                      className={`py-2.5 rounded-xl text-sm font-semibold border transition-all ${sendMode===val ? "bg-emerald-900/40 border-emerald-600 text-emerald-300" : "bg-stone-800 border-stone-700 text-stone-400 hover:border-stone-600"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-stone-600 mt-3">⚠ Customers without email will receive text only. {customers.filter(c=>!c.email).length} missing email.</p>
+              </Card>
+
+              <button onClick={handleSend} disabled={selectedCustomers.length === 0 || sentStatus === "sending"}
+                className="w-full bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all">
+                {sentStatus === "sending"
+                  ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Sending to {selectedCustomers.length} customers...</>
+                  : <><Icon name="mail" size={18} /> Send to {selectedCustomers.length} Customer{selectedCustomers.length !== 1 ? "s" : ""}</>}
+              </button>
             </div>
 
-            {openMsgType === "email" ? (
-              <div className="bg-stone-800 border border-stone-700 rounded-2xl overflow-hidden">
-                <div className="bg-stone-900 px-5 py-3 border-b border-stone-700 flex items-center gap-3">
-                  <div className="flex gap-1.5">{["bg-red-500","bg-amber-500","bg-emerald-500"].map(c=><div key={c} className={`w-3 h-3 rounded-full ${c}`}/>)}</div>
-                  <span className="text-xs text-stone-500 flex-1 text-center">Welcome Back — Your 2026 Season Starts Soon! 🌿</span>
-                  {editedOpenEmail !== null && (
-                    <button onClick={() => setEditedOpenEmail(null)} className="text-xs text-stone-500 hover:text-amber-400 transition-colors">↺ Reset</button>
-                  )}
-                </div>
-                <div className="relative">
-                  <textarea
-                    value={editedOpenEmail !== null ? editedOpenEmail : seasonOpenEmail(previewCustomer)}
-                    onChange={e => setEditedOpenEmail(e.target.value)}
-                    onFocus={() => { if (editedOpenEmail === null) setEditedOpenEmail(seasonOpenEmail(previewCustomer)); }}
-                    rows={18}
-                    className="w-full p-5 text-xs text-stone-300 leading-relaxed font-mono bg-stone-800 resize-none focus:outline-none focus:bg-stone-750 border-none"
-                    placeholder="Edit message here..."
-                  />
-                  {editedOpenEmail === null && (
-                    <div className="absolute bottom-3 right-4 text-xs text-stone-600 pointer-events-none italic">Click to edit</div>
-                  )}
-                </div>
+            {/* RIGHT: Message preview */}
+            <div className="md:col-span-3">
+              <div className="flex gap-2 mb-4">
+                {["email","text"].map(t => (
+                  <button key={t} onClick={() => setMsgPreviewType(t)}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${msgPreviewType===t ? "bg-stone-700 border-stone-500 text-stone-200" : "bg-stone-900 border-stone-800 text-stone-500 hover:border-stone-700"}`}>
+                    {t === "email" ? "📧 Email Preview" : "📱 Text Preview"}
+                  </button>
+                ))}
+                <span className="ml-auto text-xs text-stone-600 self-center italic">Personalized per customer — showing {previewCustomer?.name?.split(" ")[0] || "preview"}</span>
               </div>
-            ) : (
-              <div className="flex justify-center">
-                <div className="w-72">
-                  <div className="bg-stone-800 border-4 border-stone-600 rounded-3xl overflow-hidden shadow-2xl">
-                    <div className="bg-stone-900 px-4 py-2 text-center text-xs text-stone-500 border-b border-stone-700 flex items-center justify-center gap-2">
-                      Owen's Lawn + Landscape · Text Message
-                      {editedOpenText !== null && (
-                        <button onClick={() => setEditedOpenText(null)} className="text-xs text-stone-500 hover:text-amber-400 transition-colors">↺</button>
-                      )}
-                    </div>
-                    <div className="p-4 min-h-48 bg-stone-950">
-                      <textarea
-                        value={editedOpenText !== null ? editedOpenText : seasonOpenText(previewCustomer)}
-                        onChange={e => setEditedOpenText(e.target.value)}
-                        onFocus={() => { if (editedOpenText === null) setEditedOpenText(seasonOpenText(previewCustomer)); }}
-                        rows={6}
-                        className="w-full bg-stone-800 rounded-2xl rounded-tl-sm px-4 py-3 text-xs text-stone-300 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-emerald-700 border-none"
-                        placeholder="Edit text message..."
-                      />
-                    </div>
-                    <div className="bg-stone-900 px-4 py-2 text-center text-xs text-stone-600 border-t border-stone-700">
-                      {(editedOpenText ?? seasonOpenText(previewCustomer)).length} chars · {Math.ceil((editedOpenText ?? seasonOpenText(previewCustomer)).length / 160)} SMS segment
+
+              {msgPreviewType === "email" ? (
+                <div className="bg-stone-800 border border-stone-700 rounded-2xl overflow-hidden">
+                  <div className="bg-stone-900 px-5 py-3 border-b border-stone-700 flex items-center gap-3">
+                    <div className="flex gap-1.5">{["bg-red-500","bg-amber-500","bg-emerald-500"].map(c=><div key={c} className={`w-3 h-3 rounded-full ${c}`}/>)}</div>
+                    <span className="text-xs text-stone-500 flex-1 text-center">{getTemplateSubject(activeTemplate)}</span>
+                    {editedEmail !== null && (
+                      <button onClick={() => setEditedEmail(null)} className="text-xs text-stone-500 hover:text-amber-400 transition-colors">↺ Reset</button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <textarea
+                      value={editedEmail !== null ? editedEmail : (previewCustomer ? getTemplateEmail(activeTemplate, previewCustomer) : "")}
+                      onChange={e => setEditedEmail(e.target.value)}
+                      onFocus={() => { if (editedEmail === null && previewCustomer) setEditedEmail(getTemplateEmail(activeTemplate, previewCustomer)); }}
+                      rows={18}
+                      className="w-full p-5 text-xs text-stone-300 leading-relaxed font-mono bg-stone-800 resize-none focus:outline-none border-none"
+                      placeholder="Edit message here..."
+                    />
+                    {editedEmail === null && (
+                      <div className="absolute bottom-3 right-4 text-xs text-stone-600 pointer-events-none italic">Click to edit</div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-center">
+                  <div className="w-72">
+                    <div className="bg-stone-800 border-4 border-stone-600 rounded-3xl overflow-hidden shadow-2xl">
+                      <div className="bg-stone-900 px-4 py-2 text-center text-xs text-stone-500 border-b border-stone-700 flex items-center justify-center gap-2">
+                        Owen's Lawn + Landscape · Text Message
+                        {editedText !== null && (
+                          <button onClick={() => setEditedText(null)} className="text-xs text-stone-500 hover:text-amber-400 transition-colors">↺</button>
+                        )}
+                      </div>
+                      <div className="p-4 min-h-48 bg-stone-950">
+                        <textarea
+                          value={editedText !== null ? editedText : (previewCustomer ? getTemplateText(activeTemplate, previewCustomer) : "")}
+                          onChange={e => setEditedText(e.target.value)}
+                          onFocus={() => { if (editedText === null && previewCustomer) setEditedText(getTemplateText(activeTemplate, previewCustomer)); }}
+                          rows={6}
+                          className="w-full bg-stone-800 rounded-2xl rounded-tl-sm px-4 py-3 text-xs text-stone-300 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-emerald-700 border-none"
+                          placeholder="Edit text message..."
+                        />
+                      </div>
+                      <div className="bg-stone-900 px-4 py-2 text-center text-xs text-stone-600 border-t border-stone-700">
+                        {(editedText ?? (previewCustomer ? getTemplateText(activeTemplate, previewCustomer) : "")).length} chars · {Math.ceil((editedText ?? (previewCustomer ? getTemplateText(activeTemplate, previewCustomer) : " ")).length / 160)} SMS segment
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  // ── Season Close Campaign ──────────────────────────────────
-  if (crmView === "season-close") return (
-    <div>
-      <div className="flex items-center gap-3 mb-2">
-        <button onClick={() => { setCrmView("customers"); setSentStatus(null); }} className="text-stone-500 hover:text-stone-300 text-sm flex items-center gap-1 transition-colors">← CRM</button>
-        <span className="text-stone-700">/</span>
-        <h1 className="text-2xl font-extrabold">Season Close Campaign</h1>
-        <Badge color="gray">End of Season</Badge>
-      </div>
-      <p className="text-stone-500 text-sm mb-7">Thank returning customers, lock in re-enrollments, and promote referrals before the off-season.</p>
-
-      {sentStatus === "sent" ? (
-        <Card className="text-center py-14 bg-stone-900 border-stone-700">
-          <div className="w-16 h-16 bg-stone-800 rounded-full flex items-center justify-center mx-auto mb-4"><Icon name="check" size={32} color="#34d399" /></div>
-          <h3 className="text-xl font-black mb-2">Season Close Sent!</h3>
-          <p className="text-stone-400 text-sm mb-1">{selectedCustomers.length} customers reached via {sendMode === "both" ? "email and text" : sendMode}</p>
-          <button onClick={() => { setSentStatus(null); setCrmView("customers"); }} className="mt-6 border border-stone-700 hover:border-stone-500 text-stone-400 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all">Back to CRM</button>
-        </Card>
-      ) : (
-        <div className="grid md:grid-cols-5 gap-6">
-          <div className="md:col-span-2 space-y-5">
-            <Card>
-              <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="users" size={15} color="#34d399" /> Recipients</h3>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-stone-500">{selectedCustomers.length} of {customers.length} selected</span>
-                <button onClick={() => setSelectedCustomers(allSelected ? [] : customers.map(c=>c.id))} className="text-xs text-emerald-500 hover:text-emerald-400">{allSelected ? "Deselect all" : "Select all"}</button>
-              </div>
-              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {customers.map(c => (
-                  <label key={c.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-all ${selectedCustomers.includes(c.id) ? "bg-emerald-900/20 border border-emerald-800/40" : "bg-stone-800/40 border border-transparent hover:border-stone-700"}`}>
-                    <input type="checkbox" checked={selectedCustomers.includes(c.id)} onChange={() => toggleCustomer(c.id)} className="accent-emerald-500" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold truncate">{c.name}</div>
-                      <div className="text-xs text-stone-500">{c.frequency} · ${c.price}/visit</div>
-                    </div>
-                    {!c.email && <span title="No email"><Icon name="alert" size={12} color="#f59e0b" /></span>}
-                  </label>
-                ))}
-              </div>
-            </Card>
-
-            <Card>
-              <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="mail" size={15} color="#34d399" /> Send Via</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {[["email","Email"],["text","Text"],["both","Both"]].map(([val,label]) => (
-                  <button key={val} onClick={() => setSendMode(val)}
-                    className={`py-2.5 rounded-xl text-sm font-semibold border transition-all ${sendMode===val ? "bg-emerald-900/40 border-emerald-600 text-emerald-300" : "bg-stone-800 border-stone-700 text-stone-400 hover:border-stone-600"}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </Card>
-
-            <button onClick={handleSend} disabled={selectedCustomers.length === 0 || sentStatus === "sending"}
-              className="w-full bg-stone-700 hover:bg-stone-600 disabled:opacity-50 text-stone-200 py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all">
-              {sentStatus === "sending"
-                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Sending...</>
-                : <><Icon name="leaf" size={18} /> Send to {selectedCustomers.length} Customer{selectedCustomers.length!==1?"s":""}</>}
-            </button>
-          </div>
-
-          <div className="md:col-span-3">
-            <div className="flex gap-2 mb-4">
-              {["email","text"].map(t => (
-                <button key={t} onClick={() => setCloseMsgType(t)}
-                  className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${closeMsgType===t ? "bg-stone-700 border-stone-500 text-stone-200" : "bg-stone-900 border-stone-800 text-stone-500 hover:border-stone-700"}`}>
-                  {t === "email" ? "📧 Email Preview" : "📱 Text Preview"}
-                </button>
-              ))}
-              <span className="ml-auto text-xs text-stone-600 self-center italic">Showing {previewCustomer.name.split(" ")[0]}</span>
+              )}
             </div>
-
-            {closeMsgType === "email" ? (
-              <div className="bg-stone-800 border border-stone-700 rounded-2xl overflow-hidden">
-                <div className="bg-stone-900 px-5 py-3 border-b border-stone-700 flex items-center gap-3">
-                  <div className="flex gap-1.5">{["bg-red-500","bg-amber-500","bg-emerald-500"].map(c=><div key={c} className={`w-3 h-3 rounded-full ${c}`}/>)}</div>
-                  <span className="text-xs text-stone-500 flex-1 text-center">Thanks for a Great 2025 Season — See You in 2026! 🍂</span>
-                  {editedCloseEmail !== null && (
-                    <button onClick={() => setEditedCloseEmail(null)} className="text-xs text-stone-500 hover:text-amber-400 transition-colors">↺ Reset</button>
-                  )}
-                </div>
-                <div className="relative">
-                  <textarea
-                    value={editedCloseEmail !== null ? editedCloseEmail : seasonCloseEmail(previewCustomer)}
-                    onChange={e => setEditedCloseEmail(e.target.value)}
-                    onFocus={() => { if (editedCloseEmail === null) setEditedCloseEmail(seasonCloseEmail(previewCustomer)); }}
-                    rows={18}
-                    className="w-full p-5 text-xs text-stone-300 leading-relaxed font-mono bg-stone-800 resize-none focus:outline-none focus:bg-stone-750 border-none"
-                    placeholder="Edit message here..."
-                  />
-                  {editedCloseEmail === null && (
-                    <div className="absolute bottom-3 right-4 text-xs text-stone-600 pointer-events-none italic">Click to edit</div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="flex justify-center">
-                <div className="w-72">
-                  <div className="bg-stone-800 border-4 border-stone-600 rounded-3xl overflow-hidden shadow-2xl">
-                    <div className="bg-stone-900 px-4 py-2 text-center text-xs text-stone-500 border-b border-stone-700 flex items-center justify-center gap-2">
-                      Owen's Lawn + Landscape · Text Message
-                      {editedCloseText !== null && (
-                        <button onClick={() => setEditedCloseText(null)} className="text-xs text-stone-500 hover:text-amber-400 transition-colors">↺</button>
-                      )}
-                    </div>
-                    <div className="p-4 min-h-48 bg-stone-950">
-                      <textarea
-                        value={editedCloseText !== null ? editedCloseText : seasonCloseText(previewCustomer)}
-                        onChange={e => setEditedCloseText(e.target.value)}
-                        onFocus={() => { if (editedCloseText === null) setEditedCloseText(seasonCloseText(previewCustomer)); }}
-                        rows={6}
-                        className="w-full bg-stone-800 rounded-2xl rounded-tl-sm px-4 py-3 text-xs text-stone-300 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-emerald-700 border-none"
-                        placeholder="Edit text message..."
-                      />
-                    </div>
-                    <div className="bg-stone-900 px-4 py-2 text-center text-xs text-stone-600 border-t border-stone-700">
-                      {(editedCloseText ?? seasonCloseText(previewCustomer)).length} chars · {Math.ceil((editedCloseText ?? seasonCloseText(previewCustomer)).length / 160)} SMS segment
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
