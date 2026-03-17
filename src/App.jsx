@@ -3415,6 +3415,168 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
   );
 };
 
+// ============================================================
+// DASHBOARD TASKS — weekly recurring + month-end close
+// ============================================================
+const DashboardTasks = ({ customers, invoices, expenses, serviceVisits }) => {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun
+  const dayOfMonth = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const isLastWeek = dayOfMonth > daysInMonth - 7;
+
+  // Week key for resetting completions each Monday
+  const getWeekKey = () => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Monday of this week
+    return `tasks-${d.toISOString().slice(0, 10)}`;
+  };
+  const getMonthKey = () => `tasks-month-${now.getFullYear()}-${String(now.getMonth()).padStart(2, "0")}`;
+
+  const weekKey = getWeekKey();
+  const monthKey = getMonthKey();
+
+  const [completedWeekly, setCompletedWeekly] = useState(() => {
+    try { const stored = JSON.parse(localStorage.getItem(weekKey) || "[]"); return stored; } catch { return []; }
+  });
+  const [completedMonthly, setCompletedMonthly] = useState(() => {
+    try { const stored = JSON.parse(localStorage.getItem(monthKey) || "[]"); return stored; } catch { return []; }
+  });
+  const [editMode, setEditMode] = useState(false);
+  const [customTasks, setCustomTasks] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("custom-weekly-tasks") || "[]"); } catch { return []; }
+  });
+  const [newTask, setNewTask] = useState("");
+
+  const toggleWeekly = (id) => {
+    setCompletedWeekly(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      localStorage.setItem(weekKey, JSON.stringify(next));
+      return next;
+    });
+  };
+  const toggleMonthly = (id) => {
+    setCompletedMonthly(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      localStorage.setItem(monthKey, JSON.stringify(next));
+      return next;
+    });
+  };
+  const addCustomTask = () => {
+    if (!newTask.trim()) return;
+    const updated = [...customTasks, { id: `custom-${Date.now()}`, text: newTask.trim() }];
+    setCustomTasks(updated);
+    localStorage.setItem("custom-weekly-tasks", JSON.stringify(updated));
+    setNewTask("");
+  };
+  const removeCustomTask = (id) => {
+    const updated = customTasks.filter(t => t.id !== id);
+    setCustomTasks(updated);
+    localStorage.setItem("custom-weekly-tasks", JSON.stringify(updated));
+  };
+
+  // Active client count for dynamic tasks
+  const activeCount = customers.filter(c => c.status === "Active").length;
+  const uninvoicedCount = serviceVisits.filter(v => v.status === "completed").length; // simplified
+
+  // Weekly recurring tasks
+  const weeklyTasks = [
+    { id: "w-log-visits", text: "Log all completed service visits", color: "emerald" },
+    { id: "w-check-schedule", text: "Review & confirm this week's route schedule", color: "emerald" },
+    { id: "w-equipment", text: "Equipment check — blades, trimmer line, oil, fuel", color: "amber" },
+    { id: "w-follow-up", text: "Follow up on outstanding leads & estimates", color: "blue" },
+    { id: "w-collect", text: "Follow up on unpaid invoices", color: "red" },
+    ...customTasks.map(t => ({ ...t, color: "stone" })),
+  ];
+
+  // Month-end close tasks (only show in last week of month)
+  const monthName = now.toLocaleDateString("en-US", { month: "long" });
+  const monthEndTasks = [
+    { id: "m-invoices", text: `Generate ${monthName} invoices for all customers`, color: "emerald" },
+    { id: "m-send-invoices", text: "Send/email all invoices to customers", color: "emerald" },
+    { id: "m-log-expenses", text: `Log all ${monthName} expenses (fuel, materials, etc.)`, color: "red" },
+    { id: "m-reconcile", text: "Reconcile bank/Venmo with logged payments", color: "amber" },
+    { id: "m-review-pnl", text: `Review ${monthName} P&L — revenue vs expenses`, color: "blue" },
+    { id: "m-collect-outstanding", text: "Collect or follow up on all outstanding balances", color: "red" },
+    { id: "m-next-month", text: "Confirm next month's schedule with all customers", color: "blue" },
+  ];
+
+  const weeklyDone = weeklyTasks.filter(t => completedWeekly.includes(t.id)).length;
+  const monthlyDone = monthEndTasks.filter(t => completedMonthly.includes(t.id)).length;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-bold flex items-center gap-2"><Icon name="alert" size={16} color="#f59e0b" /> Weekly Tasks</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-stone-500">{weeklyDone}/{weeklyTasks.length}</span>
+          <button onClick={() => setEditMode(!editMode)} className="text-[10px] text-stone-600 hover:text-stone-400 transition-colors">{editMode ? "Done" : "Edit"}</button>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {weeklyTasks.map((task) => {
+          const done = completedWeekly.includes(task.id);
+          return (
+            <div key={task.id} className={`flex items-center gap-2.5 rounded-xl px-3 py-2 transition-all ${done ? "bg-stone-800/20" : "bg-stone-800/50"}`}>
+              <button onClick={() => toggleWeekly(task.id)}
+                className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${
+                  done ? "bg-emerald-600 border-emerald-600" : `border-${task.color === "amber" ? "amber" : task.color === "blue" ? "blue" : task.color === "red" ? "red" : "emerald"}-700/50`}`}>
+                {done && <Icon name="check" size={10} color="white" />}
+              </button>
+              <span className={`text-sm flex-1 transition-all ${done ? "text-stone-600 line-through" : "text-stone-300"}`}>{task.text}</span>
+              {editMode && task.id.startsWith("custom-") && (
+                <button onClick={() => removeCustomTask(task.id)} className="text-red-600 hover:text-red-400 text-xs transition-colors">✕</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {editMode && (
+        <div className="flex gap-2 mt-2">
+          <input type="text" value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => e.key === "Enter" && addCustomTask()}
+            placeholder="Add custom weekly task…"
+            className="flex-1 bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-200 focus:outline-none focus:border-emerald-600" />
+          <button onClick={addCustomTask} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all">Add</button>
+        </div>
+      )}
+
+      {/* Month-end close section — only shown in last week */}
+      {isLastWeek && (
+        <div className="mt-5 pt-4 border-t border-stone-800">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold flex items-center gap-2 text-sm">
+              <Icon name="calendar" size={14} color="#60a5fa" />
+              <span className="text-blue-400">{monthName} Close</span>
+            </h3>
+            <span className="text-[10px] text-stone-500">{monthlyDone}/{monthEndTasks.length}</span>
+          </div>
+          <div className="space-y-1.5">
+            {monthEndTasks.map((task) => {
+              const done = completedMonthly.includes(task.id);
+              return (
+                <div key={task.id} className={`flex items-center gap-2.5 rounded-xl px-3 py-2 transition-all ${done ? "bg-stone-800/20" : "bg-blue-950/20 border border-blue-900/30"}`}>
+                  <button onClick={() => toggleMonthly(task.id)}
+                    className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${
+                      done ? "bg-blue-600 border-blue-600" : "border-blue-700/50"}`}>
+                    {done && <Icon name="check" size={10} color="white" />}
+                  </button>
+                  <span className={`text-sm flex-1 transition-all ${done ? "text-stone-600 line-through" : "text-stone-300"}`}>{task.text}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {weeklyDone === weeklyTasks.length && (!isLastWeek || monthlyDone === monthEndTasks.length) && (
+        <div className="mt-3 text-center py-2 bg-emerald-900/20 rounded-xl border border-emerald-800/30">
+          <span className="text-emerald-400 text-xs font-semibold">✓ All tasks complete{isLastWeek ? " — month close done!" : " for the week!"}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AdminPortal = ({ onLogout }) => {
   const [tab, setTab] = useState("dashboard");
   const [estimateForm, setEstimateForm] = useState({ customer: "", service: "mowing", area: 5000, frequency: "weekly", notes: "", leadId: null });
@@ -3701,20 +3863,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
 
             <div className="grid md:grid-cols-2 gap-5">
               <Card>
-                <h3 className="font-bold mb-3 flex items-center gap-2"><Icon name="alert" size={16} color="#f59e0b" /> Action Items</h3>
-                <div className="space-y-2">
-                  {[
-                    { text: "Send season opener communications", color: "emerald" },
-                    { text: "Confirm returning customer rates", color: "amber" },
-                    { text: "Renew liability insurance (due Apr 2026)", color: "red" },
-                    { text: "Year 2 target — 30 clients", color: "blue" },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center gap-2.5 bg-stone-800/50 rounded-xl px-3 py-2">
-                      <div className={`w-1.5 h-1.5 rounded-full ${item.color === "amber" ? "bg-amber-400" : item.color === "blue" ? "bg-blue-400" : item.color === "red" ? "bg-red-400" : "bg-emerald-400"}`} />
-                      <span className="text-sm text-stone-300">{item.text}</span>
-                    </div>
-                  ))}
-                </div>
+                <DashboardTasks customers={customers} invoices={invoices} expenses={expenses} serviceVisits={serviceVisits} />
               </Card>
               <Card>
                 <div className="flex items-center justify-between mb-3">
