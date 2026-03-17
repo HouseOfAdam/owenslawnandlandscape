@@ -4629,8 +4629,8 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-800/40">
-                      {expenses.sort((a,b) => b.date.localeCompare(a.date)).map((e, i) => (
-                        <tr key={i} className="hover:bg-stone-800/30">
+                      {[...expenses].sort((a,b) => b.date.localeCompare(a.date)).map((e) => (
+                        <tr key={e.id} className="hover:bg-stone-800/30">
                           <td className="py-2.5 px-3 text-stone-400">{e.date}</td>
                           <td className="py-2.5 px-3"><Badge color="gray">{e.category}</Badge></td>
                           <td className="py-2.5 px-3 text-stone-300">{e.description}</td>
@@ -5241,6 +5241,24 @@ export default function App() {
   const [authedCustomer, setAuthedCustomer] = useState(null);
   const [showSendLink, setShowSendLink] = useState(false);
 
+  // Restore admin session on page refresh
+  useEffect(() => {
+    if (!isOnline()) return;
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setView("admin");
+      }
+    });
+    // Listen for auth state changes (login/logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        setView("landing");
+      }
+    });
+    return () => subscription?.unsubscribe();
+  }, []);
+
   // Check URL for magic link token on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -5314,7 +5332,7 @@ export default function App() {
         />
       )}
       {view === "admin" && (
-        <AdminPortal onLogout={() => setView("landing")} />
+        <AdminPortal onLogout={async () => { if (isOnline()) await supabase.auth.signOut(); setView("landing"); }} />
       )}
     </div>
   );
