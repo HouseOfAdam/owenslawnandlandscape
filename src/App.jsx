@@ -1071,14 +1071,12 @@ const CustomerPortal = ({ onLogout, customer }) => {
   const firstVisit = new Date(seasonStart);
   firstVisit.setDate(seasonStart.getDate() + daysUntilRoute);
 
-  // Find the next upcoming visit from today
+  // Find the next upcoming visit from today (never before season start)
   const getNextVisitDate = () => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
+    // Walk forward from first visit by interval
     const d = new Date(firstVisit);
-    // If first visit is still in the future, that's the next one
-    if (d >= now) return d;
-    // Otherwise walk forward by visitInterval until we pass today
     while (d < now) {
       d.setDate(d.getDate() + visitInterval);
     }
