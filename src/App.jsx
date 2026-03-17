@@ -1063,26 +1063,24 @@ const CustomerPortal = ({ onLogout, customer }) => {
   const frequency = customer.frequency || "Weekly";
   const visitInterval = frequency === "Biweekly" ? 14 : 7;
 
-  // Season start: Apr 2, 2026 — find first visit on customer's route day
-  const seasonStart = new Date(2026, 3, 2);
-  const startDow = seasonStart.getDay() === 0 ? 7 : seasonStart.getDay();
-  let daysUntilRoute = routeDow - startDow;
-  if (daysUntilRoute < 0) daysUntilRoute += 7;
-  const firstVisit = new Date(seasonStart);
-  firstVisit.setDate(seasonStart.getDate() + daysUntilRoute);
-
-  // Find the next upcoming visit from today (never before season start)
-  const getNextVisitDate = () => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    // Walk forward from first visit by interval
-    const d = new Date(firstVisit);
-    while (d < now) {
-      d.setDate(d.getDate() + visitInterval);
+  // Compute next visit — fully self-contained
+  const nextVisit = (() => {
+    // Season start: Apr 2, 2026
+    const ss = new Date(2026, 3, 2);
+    const ssDow = ss.getDay() === 0 ? 7 : ss.getDay();
+    let offset = routeDow - ssDow;
+    if (offset < 0) offset += 7;
+    // First visit = first occurrence of route day on/after season start
+    const fv = new Date(2026, 3, 2 + offset);
+    // Walk forward until we reach today or later
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const result = new Date(fv);
+    while (result < today) {
+      result.setDate(result.getDate() + visitInterval);
     }
-    return d;
-  };
-  const nextVisit = getNextVisitDate();
+    return result;
+  })();
   const nextVisitLabel = nextVisit.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   const tabs = [
