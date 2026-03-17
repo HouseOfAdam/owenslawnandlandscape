@@ -2941,7 +2941,13 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
     .filter(v => v.status === "completed")
     .filter(v => !selectedCustomer || v.customer_id === Number(selectedCustomer))
     .filter(v => v.date >= dateFrom && v.date <= dateTo)
-    .filter(v => !invoicedVisitIds.has(v.id));
+    .filter(v => !invoicedVisitIds.has(v.id))
+    .sort((a, b) => {
+      const nameA = (a.customers?.name || "").toLowerCase();
+      const nameB = (b.customers?.name || "").toLowerCase();
+      if (nameA !== nameB) return nameA.localeCompare(nameB);
+      return a.date.localeCompare(b.date);
+    });
 
   const toggleVisit = (id) => {
     setSelectedVisitIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -2950,52 +2956,64 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
     const ids = eligibleVisits.map(v => v.id);
     setSelectedVisitIds(ids);
   };
-  const selectedTotal = eligibleVisits.filter(v => selectedVisitIds.includes(v.id)).reduce((s, v) => s + Number(v.amount), 0);
+  const selectedVisits = eligibleVisits.filter(v => selectedVisitIds.includes(v.id));
+  const selectedTotal = selectedVisits.reduce((s, v) => s + Number(v.amount), 0);
 
-  const handleCreateInvoice = async () => {
-    if (selectedVisitIds.length === 0 || !selectedCustomer) return;
-    setCreating(true);
-    const selected = eligibleVisits.filter(v => selectedVisitIds.includes(v.id));
+  // Group selected visits by customer for bulk invoice creation
+  const selectedByCustomer = {};
+  selectedVisits.forEach(v => {
+    if (!selectedByCustomer[v.customer_id]) selectedByCustomer[v.customer_id] = [];
+    selectedByCustomer[v.customer_id].push(v);
+  });
+  const uniqueCustomerCount = Object.keys(selectedByCustomer).length;
 
-    // Build line items by grouping same service
+  // Build line items for a set of visits
+  const buildLineItems = (visits) => {
     const grouped = {};
-    selected.forEach(v => {
+    visits.forEach(v => {
       const key = `${v.service}|${Number(v.amount).toFixed(2)}`;
       if (!grouped[key]) grouped[key] = { service: v.service, rate: Number(v.amount), count: 0, dates: [] };
       grouped[key].count++;
       grouped[key].dates.push(v.date);
     });
-    const lineItems = Object.values(grouped).map(g => ({
+    return Object.values(grouped).map(g => ({
       description: g.count > 1 ? `${g.service} x${g.count}` : g.service,
       dates: g.dates,
       rate: g.rate,
       quantity: g.count,
       amount: g.rate * g.count,
     }));
+  };
 
-    const total = lineItems.reduce((s, li) => s + li.amount, 0);
-    const invNum = await db.getNextInvoiceNumber();
+  const handleCreateInvoices = async () => {
+    if (selectedVisitIds.length === 0) return;
+    setCreating(true);
 
-    const invoice = await db.createInvoice({
-      invoice_number: invNum,
-      customer_id: Number(selectedCustomer),
-      date_issued: new Date().toISOString().slice(0, 10),
-      date_due: new Date().toISOString().slice(0, 10), // Due on receipt
-      line_items: lineItems,
-      subtotal: total,
-      total: total,
-      status: "unpaid",
-      notes: invoiceNotes,
-      visit_ids: selectedVisitIds,
-    });
+    // Create one invoice per customer from selected visits
+    for (const [custId, visits] of Object.entries(selectedByCustomer)) {
+      const lineItems = buildLineItems(visits);
+      const total = lineItems.reduce((s, li) => s + li.amount, 0);
+      const invNum = await db.getNextInvoiceNumber();
 
-    if (invoice) {
-      await onRefreshInvoices();
-      setShowCreateInvoice(false);
-      setSelectedVisitIds([]);
-      setInvoiceNotes("");
-      setSelectedCustomer("");
+      await db.createInvoice({
+        invoice_number: invNum,
+        customer_id: Number(custId),
+        date_issued: new Date().toISOString().slice(0, 10),
+        date_due: new Date().toISOString().slice(0, 10),
+        line_items: lineItems,
+        subtotal: total,
+        total: total,
+        status: "unpaid",
+        notes: invoiceNotes,
+        visit_ids: visits.map(v => v.id),
+      });
     }
+
+    await onRefreshInvoices();
+    setShowCreateInvoice(false);
+    setSelectedVisitIds([]);
+    setInvoiceNotes("");
+    setSelectedCustomer("");
     setCreating(false);
   };
 
@@ -3272,36 +3290,50 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
               </div>
 
               {/* Eligible visits */}
-              {!selectedCustomer ? (
-                <div className="text-stone-500 text-sm py-6 text-center bg-stone-800/30 rounded-xl">Select a customer to see uninvoiced visits</div>
-              ) : eligibleVisits.length === 0 ? (
-                <div className="text-stone-500 text-sm py-6 text-center bg-stone-800/30 rounded-xl">No uninvoiced completed visits for this customer in the selected date range</div>
+              {eligibleVisits.length === 0 ? (
+                <div className="text-stone-500 text-sm py-6 text-center bg-stone-800/30 rounded-xl">No uninvoiced completed visits in the selected date range</div>
               ) : (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs text-stone-500 uppercase tracking-wider font-semibold">{eligibleVisits.length} uninvoiced visit{eligibleVisits.length !== 1 ? "s" : ""}</span>
                     <button onClick={selectAllVisible} className="text-xs text-emerald-500 hover:text-emerald-400 transition-colors">Select all</button>
                   </div>
-                  <div className="space-y-1.5 max-h-60 overflow-y-auto">
-                    {eligibleVisits.map(v => {
+                  <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                    {eligibleVisits.map((v, idx) => {
                       const checked = selectedVisitIds.includes(v.id);
+                      const showHeader = !selectedCustomer && (idx === 0 || eligibleVisits[idx - 1].customer_id !== v.customer_id);
                       return (
-                        <button key={v.id} onClick={() => toggleVisit(v.id)}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-all text-left ${
-                            checked ? "bg-emerald-900/30 border-emerald-700 text-emerald-200" : "bg-stone-800/50 border-stone-700 text-stone-300 hover:border-stone-600"}`}>
-                          <div className="flex items-center gap-3">
-                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${checked ? "bg-emerald-600 border-emerald-600" : "border-stone-600"}`}>
-                              {checked && <Icon name="check" size={10} color="white" />}
+                        <div key={v.id}>
+                          {showHeader && (
+                            <div className="flex items-center gap-2 pt-3 pb-1 px-1">
+                              <div className="w-5 h-5 bg-emerald-900/30 rounded-full flex items-center justify-center text-emerald-400 text-[9px] font-bold shrink-0">{(v.customers?.name || "?")[0]}</div>
+                              <span className="text-xs font-bold text-stone-300 uppercase tracking-wider">{v.customers?.name || "Customer"}</span>
+                              <button onClick={() => {
+                                const custVisits = eligibleVisits.filter(ev => ev.customer_id === v.customer_id).map(ev => ev.id);
+                                const allSelected = custVisits.every(id => selectedVisitIds.includes(id));
+                                if (allSelected) setSelectedVisitIds(prev => prev.filter(id => !custVisits.includes(id)));
+                                else setSelectedVisitIds(prev => [...new Set([...prev, ...custVisits])]);
+                              }} className="text-[10px] text-emerald-600 hover:text-emerald-400 ml-auto transition-colors">toggle all</button>
                             </div>
-                            <div>
-                              <span className="font-medium">{v.date}</span>
-                              <span className="text-stone-500 mx-2">·</span>
-                              <span>{v.service}</span>
-                              {v.notes && <span className="text-stone-600 text-xs ml-2">({v.notes})</span>}
+                          )}
+                          <button onClick={() => toggleVisit(v.id)}
+                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-all text-left ${
+                              checked ? "bg-emerald-900/30 border-emerald-700 text-emerald-200" : "bg-stone-800/50 border-stone-700 text-stone-300 hover:border-stone-600"}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${checked ? "bg-emerald-600 border-emerald-600" : "border-stone-600"}`}>
+                                {checked && <Icon name="check" size={10} color="white" />}
+                              </div>
+                              <div>
+                                <span className="font-medium">{v.date}</span>
+                                <span className="text-stone-500 mx-2">·</span>
+                                <span>{v.service}</span>
+                                {selectedCustomer === "" && <span className="text-stone-600 text-xs ml-2">— {v.customers?.name}</span>}
+                                {v.notes && <span className="text-stone-600 text-xs ml-2">({v.notes})</span>}
+                              </div>
                             </div>
-                          </div>
-                          <span className={`font-bold ${checked ? "text-emerald-400" : "text-stone-400"}`}>${Number(v.amount).toFixed(2)}</span>
-                        </button>
+                            <span className={`font-bold ${checked ? "text-emerald-400" : "text-stone-400"}`}>${Number(v.amount).toFixed(2)}</span>
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -3320,14 +3352,15 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
                 <div className="flex items-center justify-between bg-stone-800/50 rounded-xl px-4 py-3 border border-stone-700">
                   <div>
                     <span className="text-stone-400 text-sm">{selectedVisitIds.length} visit{selectedVisitIds.length !== 1 ? "s" : ""} selected</span>
+                    {uniqueCustomerCount > 1 && <span className="text-stone-500 text-xs ml-2">· {uniqueCustomerCount} invoices will be created</span>}
                   </div>
                   <div className="text-2xl font-black text-emerald-400">${selectedTotal.toFixed(2)}</div>
                 </div>
               )}
 
-              <button onClick={handleCreateInvoice} disabled={creating || selectedVisitIds.length === 0 || !selectedCustomer}
+              <button onClick={handleCreateInvoices} disabled={creating || selectedVisitIds.length === 0}
                 className="w-full bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-all">
-                {creating ? "Creating…" : `Create Invoice — $${selectedTotal.toFixed(2)}`}
+                {creating ? "Creating…" : uniqueCustomerCount > 1 ? `Bulk Generate ${uniqueCustomerCount} Invoices — $${selectedTotal.toFixed(2)}` : `Create Invoice — $${selectedTotal.toFixed(2)}`}
               </button>
             </div>
           </div>
