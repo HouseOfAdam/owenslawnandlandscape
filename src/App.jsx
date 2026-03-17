@@ -1473,6 +1473,8 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
   useEffect(() => { loadLeads(); }, [loadLeads]);
 
   const routeDay = (id) => {
+    const c = customers.find(cx => cx.id === id);
+    if (c && c.route_day) return c.route_day;
     const map = { 1:"Monday", 2:"Friday", 3:"Monday", 4:"Thursday", 5:"Friday", 6:"Friday", 7:"Friday", 8:"Monday", 9:"Monday" };
     return map[id] || "Friday";
   };
@@ -2484,11 +2486,48 @@ const colorClass = (c, type) => {
   return map[c]?.[type] ?? "";
 };
 
-const AdminScheduleCalendar = () => {
-  const today = new Date(2026, 2, 6); // Mar 6 2026 — app "today"
-  const [viewDate, setViewDate]   = useState(new Date(2026, 2, 1)); // month being shown
+const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
+  const today = new Date();
+  const [viewDate, setViewDate]   = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [showRouteEditor, setShowRouteEditor] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Build route days dynamically from customer data
+  // route_day values: "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"
+  const DOW_MAP = { "Monday":1, "Tuesday":2, "Wednesday":3, "Thursday":4, "Friday":5, "Saturday":6 };
+  const DOW_REVERSE = { 1:"Monday", 2:"Tuesday", 3:"Wednesday", 4:"Thursday", 5:"Friday", 6:"Saturday" };
+
+  // Fallback for customers without route_day set — use the old hardcoded map
+  const legacyRouteDay = (id) => {
+    const map = { 1:"Monday", 2:"Friday", 3:"Monday", 4:"Thursday", 5:"Friday", 6:"Friday", 7:"Friday", 8:"Monday", 9:"Monday" };
+    return map[id] || "Friday";
+  };
+
+  const getCustomerRouteDay = (c) => c.route_day || legacyRouteDay(c.id);
+
+  const activeCustomers = customers.filter(c => c.status === "Active");
+
+  // Build ROUTE_DAYS dynamically from customers
+  const dynamicRouteDays = {};
+  for (let d = 1; d <= 6; d++) dynamicRouteDays[d] = [];
+  activeCustomers.forEach(c => {
+    const dayName = getCustomerRouteDay(c);
+    const dayNum = DOW_MAP[dayName];
+    if (dayNum && dynamicRouteDays[dayNum]) {
+      dynamicRouteDays[dayNum].push({
+        id: c.id,
+        name: c.name,
+        addr: c.address || "",
+        service: c.service || "Mowing",
+        est: c.frequency === "Biweekly" ? "45 min" : "30 min",
+        price: c.price || 0,
+        frequency: c.frequency || "Weekly",
+        color: DOW_COLORS[dayNum] || "stone",
+      });
+    }
+  });
 
   const year  = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -2508,9 +2547,8 @@ const AdminScheduleCalendar = () => {
   const getJobs = (date) => {
     if (!date) return [];
     const dow = date.getDay(); // 0=Sun,1=Mon,...,6=Sat
-    // map JS dow (Sun=0) → our key (Mon=1..Sat=6)
     const key = dow === 0 ? 7 : dow;
-    return ROUTE_DAYS[key] || [];
+    return dynamicRouteDays[key] || [];
   };
 
   const isToday = (date) => date && date.toDateString() === today.toDateString();
@@ -2556,16 +2594,98 @@ const AdminScheduleCalendar = () => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-extrabold">Schedule & Route Planner</h1>
-          <p className="text-stone-500 text-sm mt-0.5">Click any day to preview stops and route</p>
+          <p className="text-stone-500 text-sm mt-0.5">Click any day to preview stops and route · Edit Routes to reassign customers</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setViewDate(new Date(year, month - 1, 1))}
-            className="w-9 h-9 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-xl flex items-center justify-center text-stone-400 hover:text-stone-200 transition-all text-sm font-bold">‹</button>
-          <span className="text-base font-bold w-36 text-center">{monthName} {year}</span>
-          <button onClick={() => setViewDate(new Date(year, month + 1, 1))}
-            className="w-9 h-9 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-xl flex items-center justify-center text-stone-400 hover:text-stone-200 transition-all text-sm font-bold">›</button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setShowRouteEditor(!showRouteEditor)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+              showRouteEditor ? "bg-emerald-700 text-white" : "bg-stone-800 border border-stone-700 text-stone-300 hover:border-emerald-700"}`}>
+            <Icon name="tool" size={14} /> {showRouteEditor ? "Done Editing" : "Edit Routes"}
+          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setViewDate(new Date(year, month - 1, 1))}
+              className="w-9 h-9 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-xl flex items-center justify-center text-stone-400 hover:text-stone-200 transition-all text-sm font-bold">‹</button>
+            <span className="text-base font-bold w-36 text-center">{monthName} {year}</span>
+            <button onClick={() => setViewDate(new Date(year, month + 1, 1))}
+              className="w-9 h-9 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-xl flex items-center justify-center text-stone-400 hover:text-stone-200 transition-all text-sm font-bold">›</button>
+          </div>
         </div>
       </div>
+
+      {/* ── ROUTE EDITOR PANEL ──────────────────────────── */}
+      {showRouteEditor && (
+        <div className="mb-6 bg-stone-900 border border-emerald-900/50 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold flex items-center gap-2"><Icon name="tool" size={16} color="#34d399" /> Weekly Route Editor</h3>
+            <p className="text-xs text-stone-500">Assign customers to route days — changes save to Supabase and update the CRM</p>
+          </div>
+          <div className="grid grid-cols-6 gap-3">
+            {[1,2,3,4,5,6].map(dayNum => {
+              const dayName = DOW_REVERSE[dayNum];
+              const color = DOW_COLORS[dayNum];
+              const dayCustomers = dynamicRouteDays[dayNum] || [];
+              const dayRevenue = dayCustomers.reduce((s, c) => s + (c.price || 0), 0);
+              return (
+                <div key={dayNum} className={`rounded-xl border p-3 ${colorClass(color,"bg")} ${colorClass(color,"border")}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-xs font-black uppercase tracking-wider ${colorClass(color,"text")}`}>{dayName}</span>
+                    <span className="text-[10px] text-stone-500">${dayRevenue}/wk</span>
+                  </div>
+                  <div className="space-y-1.5 min-h-[60px]">
+                    {dayCustomers.map(c => (
+                      <div key={c.id} className="flex items-center justify-between bg-stone-900/60 rounded-lg px-2 py-1.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold text-stone-200 truncate">{c.name}</div>
+                          <div className="text-[10px] text-stone-600">${c.price} · {c.frequency}</div>
+                        </div>
+                        <select
+                          value={dayName}
+                          onChange={async (e) => {
+                            setSaving(true);
+                            await db.updateCustomer(c.id, { route_day: e.target.value });
+                            await onRefreshCustomers();
+                            setSaving(false);
+                          }}
+                          className="bg-stone-800 border border-stone-700 rounded-lg text-[10px] text-stone-300 px-1.5 py-1 focus:outline-none focus:border-emerald-600 ml-2 w-20">
+                          {Object.values(DOW_REVERSE).map(d => <option key={d} value={d}>{d.slice(0,3)}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                    {dayCustomers.length === 0 && (
+                      <div className="text-[10px] text-stone-700 text-center py-3 italic">No customers</div>
+                    )}
+                  </div>
+                  <div className="mt-2 text-[10px] text-stone-600 text-center">{dayCustomers.length} stop{dayCustomers.length !== 1 ? "s" : ""}</div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Unassigned customers */}
+          {activeCustomers.filter(c => !getCustomerRouteDay(c) || !DOW_MAP[getCustomerRouteDay(c)]).length > 0 && (
+            <div className="mt-4 p-3 bg-amber-950/20 border border-amber-800/30 rounded-xl">
+              <span className="text-xs text-amber-400 font-bold">Unassigned:</span>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {activeCustomers.filter(c => !getCustomerRouteDay(c) || !DOW_MAP[getCustomerRouteDay(c)]).map(c => (
+                  <div key={c.id} className="flex items-center gap-2 bg-stone-800 rounded-lg px-2 py-1.5">
+                    <span className="text-xs text-stone-300">{c.name}</span>
+                    <select onChange={async (e) => {
+                      if (!e.target.value) return;
+                      setSaving(true);
+                      await db.updateCustomer(c.id, { route_day: e.target.value });
+                      await onRefreshCustomers();
+                      setSaving(false);
+                    }} defaultValue="" className="bg-stone-700 border border-stone-600 rounded text-[10px] text-stone-300 px-1 py-0.5">
+                      <option value="" disabled>Assign…</option>
+                      {Object.values(DOW_REVERSE).map(d => <option key={d} value={d}>{d.slice(0,3)}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {saving && <div className="mt-3 text-xs text-emerald-400 text-center animate-pulse">Saving…</div>}
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-5 gap-5">
         {/* CALENDAR — takes 3 cols */}
@@ -2622,10 +2742,10 @@ const AdminScheduleCalendar = () => {
 
           {/* Legend */}
           <div className="flex flex-wrap gap-3 mt-4 px-1">
-            {[["emerald","Mon (Main Route)"],["blue","Thu"],["purple","Fri"],["amber","Sat"]].map(([c,label]) => (
-              <div key={c} className="flex items-center gap-1.5">
-                <div className={`w-2.5 h-2.5 rounded-full ${colorClass(c,"dot")}`} />
-                <span className="text-xs text-stone-500">{label}</span>
+            {[1,2,3,4,5,6].filter(d => (dynamicRouteDays[d] || []).length > 0).map(d => (
+              <div key={d} className="flex items-center gap-1.5">
+                <div className={`w-2.5 h-2.5 rounded-full ${colorClass(DOW_COLORS[d],"dot")}`} />
+                <span className="text-xs text-stone-500">{DOW_REVERSE[d]} ({(dynamicRouteDays[d] || []).length})</span>
               </div>
             ))}
             <div className="flex items-center gap-1.5 ml-auto">
@@ -2844,23 +2964,25 @@ const AdminScheduleCalendar = () => {
               <span className="text-sm font-bold flex items-center gap-2"><Icon name="dollar" size={13} color="#34d399" /> Earnings Efficiency by Day</span>
             </div>
             <div className="p-4 space-y-4">
-              {[
-                { day: "Monday",   color: "emerald", stops: 4, revenue: 110, driveEst: 20, onSiteEst: 110, customers: ["Ron","Herb","Deborah","Tara"] },
-                { day: "Thursday", color: "blue",    stops: 2, revenue: 60,  driveEst: 15, onSiteEst: 60,  customers: ["Jason","Cory"] },
-                { day: "Friday",   color: "purple",  stops: 4, revenue: 235, driveEst: 35, onSiteEst: 160, customers: ["Kyle","Roger","Dave","Tara"] },
-              ].map((day) => {
-                const totalMin  = day.driveEst + day.onSiteEst;
-                const perHour   = Math.round((day.revenue / totalMin) * 60);
-                const maxPerHr  = 120;
-                const pct       = Math.min(100, Math.round((perHour / maxPerHr) * 100));
+              {[1,2,3,4,5,6].filter(d => (dynamicRouteDays[d] || []).length > 0).map(dayNum => {
+                const dayJobs = dynamicRouteDays[dayNum] || [];
+                const dayName = DOW_REVERSE[dayNum];
+                const color = DOW_COLORS[dayNum];
+                const revenue = dayJobs.reduce((s, j) => s + (j.price || 0), 0);
+                const onSiteEst = dayJobs.reduce((s, j) => { const n = parseInt(j.est); return s + (isNaN(n) ? 30 : n); }, 0);
+                const driveEst = Math.max(10, dayJobs.length * 8);
+                const totalMin = driveEst + onSiteEst;
+                const perHour = totalMin > 0 ? Math.round((revenue / totalMin) * 60) : 0;
+                const maxPerHr = 120;
+                const pct = Math.min(100, Math.round((perHour / maxPerHr) * 100));
                 const efficiency = perHour >= 80 ? "great" : perHour >= 50 ? "ok" : "low";
                 return (
-                  <div key={day.day}>
+                  <div key={dayNum}>
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${colorClass(day.color,"dot")}`} />
-                        <span className="text-sm font-bold text-stone-200">{day.day}</span>
-                        <span className="text-xs text-stone-600">{day.stops} stop{day.stops !== 1 ? "s" : ""}</span>
+                        <div className={`w-2 h-2 rounded-full ${colorClass(color,"dot")}`} />
+                        <span className="text-sm font-bold text-stone-200">{dayName}</span>
+                        <span className="text-xs text-stone-600">{dayJobs.length} stop{dayJobs.length !== 1 ? "s" : ""}</span>
                       </div>
                       <div className="text-right">
                         <span className={`text-sm font-black ${efficiency === "great" ? "text-emerald-400" : efficiency === "ok" ? "text-amber-400" : "text-red-400"}`}>
@@ -2874,8 +2996,8 @@ const AdminScheduleCalendar = () => {
                         style={{ width: `${pct}%` }} />
                     </div>
                     <div className="flex justify-between text-[10px] text-stone-600">
-                      <span>${day.revenue} revenue · ~{totalMin} min total</span>
-                      <span>{day.driveEst} min drive</span>
+                      <span>${revenue} revenue · ~{totalMin} min total</span>
+                      <span>{driveEst} min drive est.</span>
                     </div>
                   </div>
                 );
@@ -4105,7 +4227,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         {/* ── ACCOUNTS RECEIVABLE TAB ── */}
         {tab === "ar" && <AccountsReceivableTab customers={customers} serviceVisits={serviceVisits} invoices={invoices} onRefreshInvoices={refreshInvoices} onRefreshVisits={refreshServiceVisits} />}
 
-        {tab === "schedule" && <AdminScheduleCalendar />}
+        {tab === "schedule" && <AdminScheduleCalendar customers={customers} onRefreshCustomers={refreshCustomers} />}
 
         {/* AI ESTIMATOR */}
         {tab === "estimator" && (
