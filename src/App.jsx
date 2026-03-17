@@ -507,7 +507,7 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
       {estimateOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEstimateOpen(false)}>
           <div className="bg-white border border-[#ddd8d0] rounded-3xl p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
               <h3 className="text-2xl font-extrabold text-[#111]">Request an Estimate</h3>
               <button onClick={() => setEstimateOpen(false)} className="text-[#7a9488] hover:text-[#111] transition-colors"><Icon name="x" size={20} /></button>
             </div>
@@ -1085,10 +1085,24 @@ const CustomerPortal = ({ onLogout, customer }) => {
 
   const copyCode = () => { setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <div className="min-h-screen flex text-[#1a1a1a]" style={{ fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", background: "#f7f4ef" }}>
-      {/* SIDEBAR */}
-      <div className="w-60 border-r border-[#e0d9cf] flex flex-col fixed h-full z-10" style={{ background: "#ffffff" }}>
+      {/* MOBILE HEADER */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 border-b" style={{ background: "#ffffff", borderColor: "#e0d9cf" }}>
+        <div className="flex items-center gap-2">
+          <img src={OWEN_LOGO} alt="Owen's" className="h-8 w-8 object-contain" />
+          <span className="text-sm font-bold text-[#111]">{customer.name.split(" ")[0]}</span>
+        </div>
+        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-1" style={{ color: "#7a9488" }}>
+          <Icon name={mobileMenuOpen ? "x" : "menu"} size={22} />
+        </button>
+      </div>
+
+      {/* SIDEBAR — hidden on mobile, slide-in when open */}
+      {mobileMenuOpen && <div className="md:hidden fixed inset-0 bg-black/40 z-20" onClick={() => setMobileMenuOpen(false)} />}
+      <div className={`w-60 border-r border-[#e0d9cf] flex flex-col fixed h-full z-30 transition-transform duration-200 ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`} style={{ background: "#ffffff" }}>
         <div className="p-5 border-b border-[#e8e2da]">
           <div className="flex items-center gap-2">
             <img src={OWEN_LOGO} alt="Owen's Lawn + Landscape" className="h-9 w-9 object-contain" />
@@ -1102,7 +1116,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
+            <button key={t.id} onClick={() => { setTab(t.id); setMobileMenuOpen(false); }}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all"
               style={{ background: tab === t.id ? "#e6f2eb" : "transparent", color: tab === t.id ? "#1a4a2e" : "#5a6e62", fontWeight: tab === t.id ? "600" : "400" }}>
               <Icon name={t.icon} size={16} color={tab === t.id ? "#1a4a2e" : "#7a9488"} />
@@ -1118,11 +1132,11 @@ const CustomerPortal = ({ onLogout, customer }) => {
       </div>
 
       {/* MAIN */}
-      <div className="ml-60 flex-1 p-8">
+      <div className="md:ml-60 flex-1 p-4 md:p-8 pt-16 md:pt-8">
 
         {/* ── OUTSTANDING BALANCE BANNER ── */}
         {totalOwed > 0 && (
-          <div className="mb-6 border rounded-2xl px-5 py-4 flex items-center justify-between gap-4" style={{ background: "#fffbeb", borderColor: "#fcd34d" }}>
+          <div className="mb-6 border rounded-2xl px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4" style={{ background: "#fffbeb", borderColor: "#fcd34d" }}>
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#fef3c7" }}>
                 <Icon name="invoice" size={16} color="#d97706" />
@@ -1145,7 +1159,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
           <div>
             <h1 className="text-2xl font-extrabold mb-1 text-[#111]">Welcome back, {customer.name.split(" ")[0]}!</h1>
             <p className="text-[#7a9488] text-sm mb-6">Here's your account overview</p>
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6">
               {[
                 { label: "Service Rate", value: `$${customer.price}`, sub: `Per visit · ${customer.frequency}`, icon: "dollar", color: "#1a4a2e" },
                 { label: "Account Balance", value: totalOwed > 0 ? `$${totalOwed.toFixed(2)}` : "$0.00", sub: totalOwed > 0 ? "Payment due" : "All paid up!", icon: totalOwed > 0 ? "invoice" : "check", color: totalOwed > 0 ? "#d97706" : "#1a4a2e" },
@@ -1222,7 +1236,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
             <p className="text-[#7a9488] text-sm mb-6">View your balance and pay outstanding invoices</p>
 
             {totalOwed > 0 ? (
-              <div className="rounded-2xl p-5 mb-6 flex items-center justify-between gap-4" style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+              <div className="rounded-2xl p-5 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4" style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
                 <div>
                   <div className="text-amber-600 text-sm font-semibold mb-0.5">Outstanding Balance</div>
                   <div className="text-4xl font-black text-amber-700">${totalOwed.toFixed(2)}</div>
@@ -2032,7 +2046,7 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
   // ── LEADS LIST VIEW ────────────────────────────────────────
   if (crmView === "leads") return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-extrabold">Leads Pipeline</h1>
           <p className="text-stone-500 text-sm">{statusCounts.all} total · <span className="text-amber-400 font-semibold">{statusCounts.new} new</span></p>
@@ -2122,12 +2136,12 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
   // ── CUSTOMERS LIST VIEW ─────────────────────────────────────
   if (crmView === "customers") return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-extrabold">Customer CRM</h1>
           <p className="text-stone-500 text-sm">{customers.length} active · <span className="text-amber-400 font-semibold">{statusCounts.new} new lead{statusCounts.new !== 1 ? "s" : ""}</span></p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={() => setCrmView("leads")} className="relative flex items-center gap-2 bg-amber-700/30 hover:bg-amber-700/60 text-amber-400 px-4 py-2 rounded-xl text-sm font-semibold transition-all">
             <Icon name="users" size={15} /> Leads
             {statusCounts.new > 0 && (
@@ -2679,12 +2693,12 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-extrabold">Schedule & Route Planner</h1>
           <p className="text-stone-500 text-sm mt-0.5">Click any day to preview stops and route · Edit Routes to reassign customers</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button onClick={() => setShowRouteEditor(!showRouteEditor)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
               showRouteEditor ? "bg-emerald-700 text-white" : "bg-stone-800 border border-stone-700 text-stone-300 hover:border-emerald-700"}`}>
@@ -2707,7 +2721,7 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
             <h3 className="font-bold flex items-center gap-2"><Icon name="tool" size={16} color="#34d399" /> Weekly Route Editor</h3>
             <p className="text-xs text-stone-500">Assign customers to route days — changes save to Supabase and update the CRM</p>
           </div>
-          <div className="grid grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[1,2,3,4,5,6].map(dayNum => {
               const dayName = DOW_REVERSE[dayNum];
               const color = DOW_COLORS[dayNum];
@@ -3060,7 +3074,7 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
                 {/* Weekly summary */}
                 <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4">
                   <h3 className="text-sm font-bold mb-3 flex items-center gap-2"><Icon name="chart" size={13} color="#34d399" /> Weekly Overview</h3>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="text-center">
                       <div className="text-2xl font-black text-emerald-400">${weeklyRevenue}</div>
                       <div className="text-[10px] text-stone-500">Weekly Revenue</div>
@@ -3382,7 +3396,7 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-extrabold">Accounts Receivable</h1>
           <p className="text-stone-500 text-sm mt-0.5">Generate invoices from service visits, track payments</p>
@@ -3393,7 +3407,7 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4 mb-7">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-7">
         <div className="bg-amber-950/30 border border-amber-800/40 rounded-2xl p-4">
           <div className="text-xs text-amber-500 uppercase tracking-wider font-semibold mb-1">Outstanding</div>
           <div className="text-3xl font-black text-amber-300">${totalUnpaid.toFixed(2)}</div>
@@ -3422,7 +3436,7 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
           <h2 className="text-sm font-bold uppercase tracking-wider text-amber-500 mb-3 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Outstanding Invoices
           </h2>
-          <div className="rounded-2xl border border-amber-800/30 overflow-hidden">
+          <div className="rounded-2xl border border-amber-800/30 overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-amber-950/20 border-b border-amber-800/30">
@@ -3468,7 +3482,7 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
           <h2 className="text-sm font-bold uppercase tracking-wider text-emerald-600 mb-3 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" /> Collected Payments
           </h2>
-          <div className="rounded-2xl border border-stone-800 overflow-hidden">
+          <div className="rounded-2xl border border-stone-800 overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-stone-900/80 border-b border-stone-800">
@@ -3536,7 +3550,7 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
             </div>
             <div className="p-6 space-y-5">
               {/* Customer & date range */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Customer</label>
                   <select value={selectedCustomer} onChange={e => { setSelectedCustomer(e.target.value); setSelectedVisitIds([]); }}
@@ -4052,10 +4066,24 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
     { name: "Shovel", purchase: 32.99, purchaseDate: "Jul 2025", category: "Tools", depreciation: "3yr", monthlyDep: 0.92 },
   ];
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100 flex" style={{ fontFamily: "'Georgia', serif" }}>
-      {/* SIDEBAR */}
-      <div className="w-64 bg-stone-900 border-r border-stone-800 flex flex-col fixed h-full z-10">
+      {/* MOBILE HEADER */}
+      <div className="md:hidden fixed top-0 left-0 right-0 bg-stone-900 border-b border-stone-800 z-30 flex items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <img src={OWEN_LOGO} alt="Owen's" className="h-8 w-8 object-contain" />
+          <span className="text-xs text-emerald-500 font-semibold">Admin</span>
+        </div>
+        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-stone-400 hover:text-stone-200 p-1">
+          <Icon name={mobileMenuOpen ? "x" : "menu"} size={22} />
+        </button>
+      </div>
+
+      {/* SIDEBAR — hidden on mobile, slide-in when open */}
+      {mobileMenuOpen && <div className="md:hidden fixed inset-0 bg-black/60 z-20" onClick={() => setMobileMenuOpen(false)} />}
+      <div className={`w-64 bg-stone-900 border-r border-stone-800 flex flex-col fixed h-full z-30 transition-transform duration-200 ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}>
         <div className="p-5 border-b border-stone-800">
           <div className="flex items-center gap-2.5">
             <img src={OWEN_LOGO} alt="Owen's Lawn + Landscape" className="h-9 w-9 object-contain" />
@@ -4075,7 +4103,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
+            <button key={t.id} onClick={() => { setTab(t.id); setMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${tab === t.id ? "bg-emerald-900/40 text-emerald-300" : "text-stone-400 hover:bg-stone-800 hover:text-stone-200"}`}>
               <Icon name={t.icon} size={16} color="currentColor" />
               {t.label}
@@ -4090,19 +4118,19 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
       </div>
 
       {/* MAIN */}
-      <div className="ml-64 flex-1 p-8 overflow-y-auto">
+      <div className="md:ml-64 flex-1 p-4 md:p-8 overflow-y-auto pt-16 md:pt-8">
 
         {/* DASHBOARD */}
         {tab === "dashboard" && (
           <div>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
               <div>
                 <h1 className="text-2xl font-extrabold">Business Dashboard</h1>
                 <p className="text-stone-500 text-sm">2026 Season — Year 2</p>
               </div>
               <Badge color="emerald">Active Season</Badge>
             </div>
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
               <StatCard label="Revenue" value={`$${totalRevenue2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="dollar" color="emerald" />
               <StatCard label="Expenses" value={`$${totalExpenses2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="alert" color="red" />
               <StatCard label="Net Profit" value={`$${netProfit2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub={totalRevenue2026 > 0 ? `${((netProfit2026/totalRevenue2026)*100).toFixed(1)}% margin` : "—"} icon="chart" color="blue" />
@@ -4164,7 +4192,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         {/* SERVICE VISITS */}
         {tab === "visits" && (
           <div>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
               <div>
                 <h1 className="text-2xl font-extrabold">Service Visits</h1>
                 <p className="text-stone-500 text-sm">Log completed visits — revenue is computed from this data</p>
@@ -4174,7 +4202,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
               </button>
             </div>
 
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
               <StatCard label="Completed" value={`${completedVisits.filter(v => new Date(v.date).getFullYear() === 2026).length}`} sub="2026 visits" icon="check" color="emerald" />
               <StatCard label="Revenue" value={`$${totalRevenue2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="from visits" icon="dollar" color="emerald" />
               <StatCard label="Scheduled" value={`${serviceVisits.filter(v => v.status === "scheduled").length}`} sub="upcoming" icon="calendar" color="blue" />
@@ -4414,7 +4442,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                         <h3 className="font-bold text-emerald-300">AI Estimate Generated</h3>
                         <Badge color="green">Profit: {aiEstimate.profitMargin}</Badge>
                       </div>
-                      <div className="grid grid-cols-3 gap-3 mb-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                         <div className="text-center bg-stone-900/50 rounded-xl p-3">
                           <div className="text-2xl font-extrabold text-emerald-400">${aiEstimate.basePrice}</div>
                           <div className="text-xs text-stone-500">Per Visit</div>
@@ -4521,13 +4549,14 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
           <div>
             <h1 className="text-2xl font-extrabold mb-1">Materials & Equipment</h1>
             <p className="text-stone-500 text-sm mb-6">Track assets, inventory, and depreciation</p>
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6">
               <StatCard label="Total Equipment" value="$1,849" sub="Book value" icon="tool" color="blue" />
               <StatCard label="Monthly Depreciation" value="$22" sub="All assets" icon="trending" color="amber" />
               <StatCard label="Materials YTD" value="$970" sub="2025 spend" icon="package" color="emerald" />
             </div>
             <Card className="mb-5">
               <h3 className="font-bold mb-4">Equipment Inventory & Depreciation</h3>
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-stone-800">
@@ -4548,6 +4577,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                   ))}
                 </tbody>
               </table>
+              </div>
             </Card>
             <Card>
               <h3 className="font-bold mb-4">Materials by Job (2025)</h3>
@@ -4575,7 +4605,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         {/* FINANCIALS */}
         {tab === "expenses" && (
           <div>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
               <div>
                 <h1 className="text-2xl font-extrabold">Expense Tracker</h1>
                 <p className="text-stone-500 text-sm">2026 Season — Log and track operating costs</p>
@@ -4585,7 +4615,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6">
               <StatCard label="Total Expenses" value={`$${totalExpenses2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="alert" color="red" />
               <StatCard label="Revenue" value={`$${totalRevenue2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="dollar" color="emerald" />
               <StatCard label="Net Profit" value={`$${netProfit2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub={totalRevenue2026 > 0 ? `${((netProfit2026/totalRevenue2026)*100).toFixed(1)}% margin` : "—"} icon="chart" color="blue" />
@@ -4710,7 +4740,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                 <h3 className="font-bold flex items-center gap-2"><Icon name="calendar" size={16} color="#34d399" /> 2025 Season — Year 1</h3>
                 <Badge color="green">Complete ✓</Badge>
               </div>
-              <div className="grid grid-cols-3 gap-4 mb-5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-5">
                 <StatCard label="Total Revenue" value={`$${season2025.totalRevenue.toLocaleString()}`} sub="All services" icon="dollar" color="emerald" />
                 <StatCard label="Total Expenses" value={`$${season2025.totalExpenses.toLocaleString()}`} sub="Operating costs" icon="alert" color="red" />
                 <StatCard label="Net Profit" value={`$${season2025.netProfit.toLocaleString()}`} sub={`${((season2025.netProfit/season2025.totalRevenue)*100).toFixed(1)}% margin`} icon="chart" color="blue" />
