@@ -2869,210 +2869,230 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
         </div>
       </div>
 
-      {/* ── ROUTE DENSITY SECTION ─────────────────────────── */}
+      {/* ── ROUTE INSIGHTS ──────────────────────────────── */}
       <div className="mt-8">
         <div className="flex items-center gap-3 mb-5">
           <div className="w-8 h-8 bg-emerald-900/40 rounded-xl flex items-center justify-center">
             <Icon name="trending" size={16} color="#34d399" />
           </div>
           <div>
-            <h2 className="text-lg font-black">Route Density & Efficiency</h2>
-            <p className="text-stone-500 text-xs">Clustering, earnings per route day, and growth gaps</p>
+            <h2 className="text-lg font-black">Route Insights</h2>
+            <p className="text-stone-500 text-xs">Revenue, efficiency, and balance across your route days</p>
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-5">
+        {(() => {
+          // Compute all insights from dynamic data
+          const activeDays = [1,2,3,4,5,6].filter(d => (dynamicRouteDays[d] || []).length > 0);
+          const allStops = activeDays.reduce((s, d) => s + (dynamicRouteDays[d] || []).length, 0);
+          const weeklyRevenue = activeDays.reduce((s, d) => s + (dynamicRouteDays[d] || []).reduce((r, j) => r + (j.price || 0), 0), 0);
 
-          {/* ── CARD 1: Neighborhood Clusters ───────────────── */}
-          <div className="lg:col-span-1 bg-stone-900 border border-stone-800 rounded-2xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-stone-800 flex items-center justify-between">
-              <span className="text-sm font-bold flex items-center gap-2"><Icon name="users" size={13} color="#34d399" /> Neighborhood Clusters</span>
-              <span className="text-xs text-stone-600">Bargersville area</span>
-            </div>
-            <div className="divide-y divide-stone-800/50">
-              {[
-                {
-                  area: "Briarwood Dr / Howard Rd cluster",
-                  customers: ["Ron Cooper", "Herb Hokey", "Deborah Whittemore"],
-                  day: "Mon", color: "emerald",
-                  density: "high",
-                  note: "3 customers in the same area — highest density cluster",
-                  revenue: 80,
-                },
-                {
-                  area: "Honey Creek / Bending Lane corridor",
-                  customers: ["Kyle Lemon", "Roger Newman"],
-                  day: "Fri", color: "purple",
-                  density: "high",
-                  note: "Close enough to run back-to-back efficiently",
-                  revenue: 160,
-                },
-                {
-                  area: "N Oval Ln / Entrance Hall",
-                  customers: ["Jason Hage", "Cory Rehs"],
-                  day: "Thu", color: "blue",
-                  density: "high",
-                  note: "Same sub-area — <10 min drive between stops",
-                  revenue: 60,
-                },
-                {
-                  area: "Ceejay Dr / N Banta Rd",
-                  customers: ["Tara Roberts", "Dave Mauer"],
-                  day: "Fri", color: "purple",
-                  density: "medium",
-                  note: "~15 min apart — same route day keeps it efficient",
-                  revenue: 80,
-                },
-              ].map((cluster, i) => (
-                <div key={i} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold text-stone-200 truncate">{cluster.area}</div>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {cluster.customers.map(c => (
-                          <span key={c} className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${colorClass(cluster.color,"badge")}`}>{c.split(" ")[0]}</span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                        cluster.density === "high" ? "bg-emerald-900/50 text-emerald-400" :
-                        cluster.density === "medium" ? "bg-amber-900/40 text-amber-400" :
-                        "bg-red-900/30 text-red-400"}`}>
-                        {cluster.density === "high" ? "● Dense" : cluster.density === "medium" ? "◑ Medium" : "○ Sparse"}
-                      </span>
-                      <span className="text-[10px] text-stone-500">{cluster.day} · ${cluster.revenue}/wk</span>
-                    </div>
-                  </div>
-                  <div className="text-[10px] text-stone-600 italic">{cluster.note}</div>
+          const dayStats = activeDays.map(dayNum => {
+            const jobs = dynamicRouteDays[dayNum] || [];
+            const rev = jobs.reduce((s, j) => s + (j.price || 0), 0);
+            const onSite = jobs.reduce((s, j) => { const n = parseInt(j.est); return s + (isNaN(n) ? 30 : n); }, 0);
+            const drive = Math.max(10, jobs.length * 8);
+            const total = drive + onSite;
+            const perHour = total > 0 ? Math.round((rev / total) * 60) : 0;
+            return { dayNum, dayName: DOW_REVERSE[dayNum], color: DOW_COLORS[dayNum], jobs, rev, onSite, drive, total, perHour, stops: jobs.length };
+          }).sort((a, b) => b.perHour - a.perHour);
+
+          const bestDay = dayStats[0];
+          const worstDay = dayStats[dayStats.length - 1];
+          const avgPerHour = dayStats.length > 0 ? Math.round(dayStats.reduce((s, d) => s + d.perHour, 0) / dayStats.length) : 0;
+          const emptyDays = [1,2,3,4,5,6].filter(d => (dynamicRouteDays[d] || []).length === 0);
+          const maxStops = Math.max(...dayStats.map(d => d.stops), 1);
+
+          // Identify imbalanced days (too few or too many relative to average)
+          const avgStops = allStops / Math.max(activeDays.length, 1);
+          const lightDays = dayStats.filter(d => d.stops < avgStops * 0.6 && d.stops < 3);
+          const heavyDays = dayStats.filter(d => d.stops > avgStops * 1.5 && d.stops > 4);
+
+          return (
+            <div className="grid lg:grid-cols-2 gap-5">
+
+              {/* ── LEFT: Day-by-Day Breakdown ── */}
+              <div className="bg-stone-900 border border-stone-800 rounded-2xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-stone-800 flex items-center justify-between">
+                  <span className="text-sm font-bold flex items-center gap-2"><Icon name="dollar" size={13} color="#34d399" /> Revenue & Efficiency by Day</span>
+                  <span className="text-xs text-stone-500">${weeklyRevenue}/wk · {allStops} stops</span>
                 </div>
-              ))}
-            </div>
-            <div className="px-4 py-3 bg-stone-950/50 border-t border-stone-800">
-              <button onClick={() => {
-                const addrs = ["918+Briarwood+Dr+Bargersville+IN","4002+Bending+Lane+Bargersville+IN","164+Ceejay+Dr+Bargersville+IN","335+Entrance+Hall+Vw+Bargersville+IN","4090+N+Oval+Ln+Bargersville+IN","3899+Honey+Creek+Blvd+Bargersville+IN","4729+N+Banta+Rd+Bargersville+IN","267+Howard+Rd+Bargersville+IN"];
-                window.open(`https://www.google.com/maps/dir/${addrs.join("/")}`, "_blank");
-              }} className="w-full text-xs text-emerald-500 hover:text-emerald-400 font-semibold transition-colors flex items-center justify-center gap-1.5 py-1">
-                <Icon name="map" size={11} color="#34d399" /> View All Customers on Map ↗
-              </button>
-            </div>
-          </div>
 
-          {/* ── CARD 2: Earnings Efficiency Per Route Day ────── */}
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-stone-800">
-              <span className="text-sm font-bold flex items-center gap-2"><Icon name="dollar" size={13} color="#34d399" /> Earnings Efficiency by Day</span>
-            </div>
-            <div className="p-4 space-y-4">
-              {[1,2,3,4,5,6].filter(d => (dynamicRouteDays[d] || []).length > 0).map(dayNum => {
-                const dayJobs = dynamicRouteDays[dayNum] || [];
-                const dayName = DOW_REVERSE[dayNum];
-                const color = DOW_COLORS[dayNum];
-                const revenue = dayJobs.reduce((s, j) => s + (j.price || 0), 0);
-                const onSiteEst = dayJobs.reduce((s, j) => { const n = parseInt(j.est); return s + (isNaN(n) ? 30 : n); }, 0);
-                const driveEst = Math.max(10, dayJobs.length * 8);
-                const totalMin = driveEst + onSiteEst;
-                const perHour = totalMin > 0 ? Math.round((revenue / totalMin) * 60) : 0;
-                const maxPerHr = 120;
-                const pct = Math.min(100, Math.round((perHour / maxPerHr) * 100));
-                const efficiency = perHour >= 80 ? "great" : perHour >= 50 ? "ok" : "low";
-                return (
-                  <div key={dayNum}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${colorClass(color,"dot")}`} />
-                        <span className="text-sm font-bold text-stone-200">{dayName}</span>
-                        <span className="text-xs text-stone-600">{dayJobs.length} stop{dayJobs.length !== 1 ? "s" : ""}</span>
+                <div className="divide-y divide-stone-800/40">
+                  {dayStats.map(day => {
+                    const eff = day.perHour >= 80 ? "great" : day.perHour >= 50 ? "ok" : "low";
+                    const barW = Math.round((day.rev / Math.max(...dayStats.map(d => d.rev), 1)) * 100);
+                    return (
+                      <div key={day.dayNum} className="px-4 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-2.5 h-2.5 rounded-full ${colorClass(day.color,"dot")}`} />
+                            <span className="text-sm font-bold text-stone-200">{day.dayName}</span>
+                            <span className="text-xs text-stone-600">{day.stops} stop{day.stops !== 1 ? "s" : ""}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-bold text-stone-300">${day.rev}</span>
+                            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                              eff === "great" ? "bg-emerald-900/50 text-emerald-400" : eff === "ok" ? "bg-amber-900/40 text-amber-400" : "bg-red-900/30 text-red-400"}`}>
+                              ${day.perHour}/hr
+                            </span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-stone-800 rounded-full h-1.5">
+                          <div className={`h-1.5 rounded-full transition-all ${
+                            eff === "great" ? "bg-emerald-500" : eff === "ok" ? "bg-amber-500" : "bg-red-500"}`}
+                            style={{ width: `${barW}%` }} />
+                        </div>
+                        <div className="flex items-center gap-3 mt-1.5">
+                          <span className="text-[10px] text-stone-600">~{day.total} min ({day.onSite} on-site + {day.drive} drive)</span>
+                          <div className="flex gap-1 ml-auto">
+                            {day.jobs.map(j => (
+                              <span key={j.id} className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${colorClass(day.color,"badge")}`}>
+                                {j.name.split(" ")[0]}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className={`text-sm font-black ${efficiency === "great" ? "text-emerald-400" : efficiency === "ok" ? "text-amber-400" : "text-red-400"}`}>
-                          ${perHour}/hr
-                        </span>
-                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="px-4 py-3 bg-stone-950/50 border-t border-stone-800">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-stone-600">Avg: <span className={`font-bold ${avgPerHour >= 80 ? "text-emerald-400" : avgPerHour >= 50 ? "text-amber-400" : "text-red-400"}`}>${avgPerHour}/hr</span> across {activeDays.length} days</span>
+                    <span className="text-emerald-600 font-bold">Target: $80+/hr</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── RIGHT: Route Health & Opportunities ── */}
+              <div className="space-y-5">
+
+                {/* Weekly summary */}
+                <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4">
+                  <h3 className="text-sm font-bold mb-3 flex items-center gap-2"><Icon name="chart" size={13} color="#34d399" /> Weekly Overview</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="text-center">
+                      <div className="text-2xl font-black text-emerald-400">${weeklyRevenue}</div>
+                      <div className="text-[10px] text-stone-500">Weekly Revenue</div>
                     </div>
-                    <div className="w-full bg-stone-800 rounded-full h-2 mb-1.5">
-                      <div className={`h-2 rounded-full transition-all ${
-                        efficiency === "great" ? "bg-emerald-500" : efficiency === "ok" ? "bg-amber-500" : "bg-red-500"}`}
-                        style={{ width: `${pct}%` }} />
+                    <div className="text-center">
+                      <div className="text-2xl font-black text-stone-200">{allStops}</div>
+                      <div className="text-[10px] text-stone-500">Total Stops</div>
                     </div>
-                    <div className="flex justify-between text-[10px] text-stone-600">
-                      <span>${revenue} revenue · ~{totalMin} min total</span>
-                      <span>{driveEst} min drive est.</span>
+                    <div className="text-center">
+                      <div className={`text-2xl font-black ${avgPerHour >= 80 ? "text-emerald-400" : avgPerHour >= 50 ? "text-amber-400" : "text-red-400"}`}>${avgPerHour}</div>
+                      <div className="text-[10px] text-stone-500">Avg $/hr</div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-            <div className="px-4 py-3 bg-stone-950/50 border-t border-stone-800">
-              <div className="text-[10px] text-stone-600 leading-relaxed">
-                <span className="text-emerald-400 font-bold">Target: $80+/hr.</span> Each new customer added to a dense route day increases your effective rate significantly — the drive cost is already paid.
-              </div>
-            </div>
-          </div>
-
-          {/* ── CARD 3: Growth Gaps ──────────────────────────── */}
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-stone-800 flex items-center justify-between">
-              <span className="text-sm font-bold flex items-center gap-2"><Icon name="sparkle" size={13} color="#f59e0b" /> Growth Opportunities</span>
-              <span className="text-xs bg-amber-900/40 text-amber-400 px-2 py-0.5 rounded-full font-bold">3 gaps</span>
-            </div>
-            <div className="divide-y divide-stone-800/50">
-              {[
-                {
-                  priority: "high",
-                  area: "N Oval Ln / Entrance Hall area",
-                  why: "Jason & Cory are a tight cluster but Thursday only has 2 stops. One more customer in the same subdivision turns it into a full, profitable route day.",
-                  action: "Ask Jason or Cory for a referral — a neighbor signing up costs you zero extra drive time.",
-                  impact: "+$60–$90/wk with no new fuel cost",
-                  icon: "🎯",
-                },
-                {
-                  priority: "high",
-                  area: "Briarwood / Howard Rd cluster",
-                  why: "Ron, Herb, and Deborah already make Monday your densest cluster. One more customer on the same streets would make it your most profitable single route.",
-                  action: "Target Stonegate Dr, Heritage Way — within 5 min of existing stops.",
-                  impact: "+$25–$40/wk, marginal fuel cost",
-                  icon: "🏘️",
-                },
-                {
-                  priority: "medium",
-                  area: "Honey Creek Blvd corridor",
-                  why: "Kyle is a high-value stop ($120/visit). His neighbors likely have large lots with similar needs and are already on your Friday route.",
-                  action: "Leave door hangers within 0.5 mi of Kyle's address on mow days.",
-                  impact: "+$80–$120/wk on an already-profitable Friday",
-                  icon: "💰",
-                },
-              ].map((gap, i) => (
-                <div key={i} className="px-4 py-3.5">
-                  <div className="flex items-start gap-2 mb-1.5">
-                    <span className="text-base mt-0.5">{gap.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-xs font-black text-stone-100">{gap.area}</span>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
-                          gap.priority === "high" ? "bg-red-900/40 text-red-400" : "bg-amber-900/40 text-amber-400"}`}>
-                          {gap.priority}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-stone-500 leading-relaxed mb-1.5">{gap.why}</p>
-                      <div className="bg-stone-800/60 rounded-lg px-2.5 py-1.5 mb-1.5">
-                        <div className="text-[10px] text-stone-400 font-semibold mb-0.5">Suggested action</div>
-                        <div className="text-[10px] text-stone-300">{gap.action}</div>
-                      </div>
-                      <div className="text-[10px] text-emerald-500 font-bold">{gap.impact}</div>
+                  {/* Day balance bar */}
+                  <div className="mt-4">
+                    <div className="text-[10px] text-stone-500 mb-1.5">Stop distribution</div>
+                    <div className="flex gap-1 h-6">
+                      {[1,2,3,4,5,6].map(d => {
+                        const stops = (dynamicRouteDays[d] || []).length;
+                        const color = DOW_COLORS[d];
+                        return (
+                          <div key={d} className="flex-1 flex flex-col items-center gap-0.5">
+                            <div className={`w-full rounded-sm ${stops > 0 ? colorClass(color, "bg") : "bg-stone-800/30"}`}
+                              style={{ height: `${stops > 0 ? Math.max(4, (stops / maxStops) * 24) : 4}px` }} />
+                            <span className="text-[8px] text-stone-600">{DOW_LABEL[d]}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-            <div className="px-4 py-3 bg-stone-950/50 border-t border-stone-800">
-              <div className="text-[10px] text-stone-600 leading-relaxed">
-                Adding customers to <span className="text-stone-400 font-semibold">existing route days</span> is the highest-leverage growth move — your drive time and fuel are already spent.
+
+                {/* Actionable insights */}
+                <div className="bg-stone-900 border border-stone-800 rounded-2xl overflow-hidden">
+                  <div className="px-4 py-3 border-b border-stone-800">
+                    <span className="text-sm font-bold flex items-center gap-2"><Icon name="sparkle" size={13} color="#f59e0b" /> Insights & Opportunities</span>
+                  </div>
+                  <div className="divide-y divide-stone-800/40">
+                    {/* Best performer */}
+                    {bestDay && (
+                      <div className="px-4 py-3 flex items-start gap-2.5">
+                        <span className="text-base mt-0.5">🏆</span>
+                        <div>
+                          <div className="text-xs font-bold text-stone-200">Best day: {bestDay.dayName} — ${bestDay.perHour}/hr</div>
+                          <p className="text-[10px] text-stone-500 mt-0.5">{bestDay.stops} stops generating ${bestDay.rev}/day. This is your template for route efficiency.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Underperforming days */}
+                    {worstDay && worstDay.perHour < 60 && worstDay.dayNum !== bestDay?.dayNum && (
+                      <div className="px-4 py-3 flex items-start gap-2.5">
+                        <span className="text-base mt-0.5">⚠️</span>
+                        <div>
+                          <div className="text-xs font-bold text-amber-400">Low efficiency: {worstDay.dayName} — ${worstDay.perHour}/hr</div>
+                          <p className="text-[10px] text-stone-500 mt-0.5">Only {worstDay.stops} stop{worstDay.stops !== 1 ? "s" : ""} at ${worstDay.rev}. Consider adding customers nearby or consolidating into another day.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Light days — need more stops */}
+                    {lightDays.filter(d => d.dayNum !== worstDay?.dayNum).map(day => (
+                      <div key={day.dayNum} className="px-4 py-3 flex items-start gap-2.5">
+                        <span className="text-base mt-0.5">📍</span>
+                        <div>
+                          <div className="text-xs font-bold text-stone-200">{day.dayName} has room — {day.stops} stop{day.stops !== 1 ? "s" : ""}</div>
+                          <p className="text-[10px] text-stone-500 mt-0.5">Adding 1–2 customers on {day.dayName} would boost $/hr with minimal extra drive time.</p>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Heavy days — consider splitting */}
+                    {heavyDays.map(day => (
+                      <div key={day.dayNum} className="px-4 py-3 flex items-start gap-2.5">
+                        <span className="text-base mt-0.5">📦</span>
+                        <div>
+                          <div className="text-xs font-bold text-blue-400">{day.dayName} is packed — {day.stops} stops</div>
+                          <p className="text-[10px] text-stone-500 mt-0.5">Consider moving a stop to {emptyDays.length > 0 ? DOW_REVERSE[emptyDays[0]] : "a lighter day"} to balance your week and avoid burnout.</p>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Empty days */}
+                    {emptyDays.length > 0 && emptyDays.length < 5 && (
+                      <div className="px-4 py-3 flex items-start gap-2.5">
+                        <span className="text-base mt-0.5">📅</span>
+                        <div>
+                          <div className="text-xs font-bold text-stone-200">{emptyDays.map(d => DOW_REVERSE[d]).join(", ")} — open</div>
+                          <p className="text-[10px] text-stone-500 mt-0.5">{emptyDays.length === 1 ? "This day is" : "These days are"} free for add-on services, estimates, landscaping jobs, or new route expansion.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* General growth */}
+                    <div className="px-4 py-3 flex items-start gap-2.5">
+                      <span className="text-base mt-0.5">💡</span>
+                      <div>
+                        <div className="text-xs font-bold text-emerald-400">Growth tip</div>
+                        <p className="text-[10px] text-stone-500 mt-0.5">Adding a customer to an existing route day costs almost nothing in extra drive time. Ask current customers for neighbor referrals on their mow day — it's the highest-leverage move.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* View all on map */}
+                {activeCustomers.filter(c => c.address).length > 0 && (
+                  <button onClick={() => {
+                    const addrs = activeCustomers.filter(c => c.address).map(c => encodeURIComponent(c.address));
+                    const origin = addrs[0];
+                    const dest = addrs[addrs.length - 1];
+                    const wp = addrs.slice(1, -1).join("/");
+                    window.open(`https://www.google.com/maps/dir/${origin}/${wp ? wp + "/" : ""}${addrs.length > 1 ? dest : ""}`, "_blank");
+                  }} className="w-full bg-stone-900 border border-stone-800 hover:border-emerald-800 rounded-2xl p-3 text-xs text-emerald-500 hover:text-emerald-400 font-semibold transition-all flex items-center justify-center gap-2">
+                    <Icon name="map" size={13} color="#34d399" /> View All {activeCustomers.length} Customers on Map ↗
+                  </button>
+                )}
               </div>
             </div>
-          </div>
-
-        </div>
+          );
+        })()}
       </div>
     </div>
   );
