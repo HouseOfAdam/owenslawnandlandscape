@@ -1421,7 +1421,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
             <Card light>
               <h3 className="font-bold mb-3" style={{ color: "#1a1a1a" }}>Share Your Link</h3>
               <div className="rounded-xl px-4 py-3 text-sm font-mono mb-3 break-all" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#5a6e62" }}>
-                owenslawnandlandscape.com/ref/{customer.referralCode.toLowerCase()}
+                owenslawnandlandscapes.com/ref/{customer.referralCode.toLowerCase()}
               </div>
               <div className="flex gap-2">
                 {["Copy Link", "Share via Text", "Share via Email"].map(label => (
@@ -3347,7 +3347,7 @@ const AccountsReceivableTab = ({ customers, serviceVisits, invoices, onRefreshIn
         <div class="brand">
           <h1>Owen's Lawn + Landscape</h1>
           <p>Bargersville, IN · (317) 868-4699</p>
-          <p>owenslawnandlandscape@gmail.com</p>
+          <p>owen@owenslawnandlandscapes.com</p>
         </div>
         <div class="inv-details">
           <h2>${inv.invoice_number}</h2>
