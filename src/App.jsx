@@ -1555,14 +1555,45 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
   const handleSend = async () => {
     setSentStatus("sending");
     try {
+      // If user edited the preview, the text is personalized for previewCustomer.
+      // We need to re-personalize for each actual recipient by replacing
+      // the preview customer's name and link with each recipient's.
+      const previewName = previewCustomer?.name?.split(" ")[0] || "";
+      const previewLink = previewCustomer ? magicLink(previewCustomer) : "";
+      const previewShortLink = previewCustomer ? shortLink(previewCustomer) : "";
+
+      const personalizeForCustomer = (text, customer) => {
+        if (!text) return text;
+        const firstName = customer.name?.split(" ")[0] || "";
+        const custLink = magicLink(customer);
+        const custShortLink = shortLink(customer);
+        let result = text;
+        // Replace preview customer's name with this customer's name
+        if (previewName) {
+          result = result.split(previewName).join(firstName);
+        }
+        // Replace preview customer's links with this customer's links
+        if (previewLink) {
+          result = result.split(previewLink).join(custLink);
+        }
+        if (previewShortLink && previewShortLink !== previewLink) {
+          result = result.split(previewShortLink).join(custShortLink);
+        }
+        return result;
+      };
+
       const recipients = customers
         .filter(c => selectedCustomers.includes(c.id))
         .map(c => ({
           name: c.name,
           email: c.email || "",
           phone: c.phone || "",
-          message_email: editedEmail !== null ? editedEmail : getTemplateEmail(activeTemplate, c),
-          message_text: editedText !== null ? editedText : getTemplateText(activeTemplate, c),
+          message_email: editedEmail !== null
+            ? personalizeForCustomer(editedEmail, c)
+            : getTemplateEmail(activeTemplate, c),
+          message_text: editedText !== null
+            ? personalizeForCustomer(editedText, c)
+            : getTemplateText(activeTemplate, c),
         }));
 
       const { data: { session } } = await supabase.auth.getSession();
