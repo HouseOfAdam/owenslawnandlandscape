@@ -78,6 +78,36 @@ export async function convertLeadToCustomer(leadId) {
   const tokenBase = (lead.name || "xx").toLowerCase().replace(/[^a-z]/g, "").slice(0, 2) + Math.random().toString(36).slice(2, 8);
   const refCode = (lead.name || "NEW").split(" ")[0].toUpperCase().slice(0, 4) + "2026";
 
+  // Normalize service and frequency from lead data
+  const rawService = (lead.service_type || "Mowing").toLowerCase();
+  let normalizedService = "Mowing";
+  let normalizedFrequency = lead.frequency || "Weekly";
+
+  // Map ad-hoc / one-time mowing variants → Mowing + Occasional
+  if (rawService.includes("ad-hoc") || rawService.includes("ad hoc") || rawService.includes("one-time") || rawService.includes("one time")) {
+    normalizedService = "Mowing";
+    normalizedFrequency = "Occasional";
+  } else if (rawService.includes("weekly mow") || rawService.includes("lawn mow") || rawService === "mowing") {
+    normalizedService = "Mowing";
+  } else if (rawService.includes("bi-weekly") || rawService.includes("biweekly")) {
+    normalizedService = "Mowing";
+    normalizedFrequency = "Biweekly";
+  } else if (rawService.includes("landscap")) {
+    normalizedService = "Landscaping";
+  } else if (rawService.includes("aerat")) {
+    normalizedService = "Aeration & Seeding";
+  } else if (rawService.includes("treatment") || rawService.includes("pre-emergent")) {
+    normalizedService = "Lawn Treatment";
+  } else if (rawService.includes("mulch")) {
+    normalizedService = "Mulch Application";
+  } else if (rawService.includes("brush") || rawService.includes("clearing")) {
+    normalizedService = "Brush Clearing";
+  } else if (rawService.includes("fall clean") || rawService.includes("cleanup")) {
+    normalizedService = "Fall Clean-Up";
+  } else {
+    normalizedService = lead.service_type || "Mowing";
+  }
+
   // Insert as customer
   const { data: customer, error: insertErr } = await supabase
     .from("customers")
@@ -86,9 +116,9 @@ export async function convertLeadToCustomer(leadId) {
       email: lead.email || "",
       phone: lead.phone || "",
       address: lead.address || "",
-      service: lead.service_type || "Mowing",
+      service: normalizedService,
       price: lead.price || 0,
-      frequency: lead.frequency || "Weekly",
+      frequency: normalizedFrequency,
       status: "Active",
       balance: 0,
       referral_code: refCode,
