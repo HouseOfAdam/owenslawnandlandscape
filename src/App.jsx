@@ -2598,7 +2598,7 @@ const colorClass = (c, type) => {
   return map[c]?.[type] ?? "";
 };
 
-const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
+const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers, serviceVisits = [], onRefreshVisits }) => {
   const today = new Date();
   const [viewDate, setViewDate]   = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(null);
@@ -2680,19 +2680,45 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
     const key = dow === 0 ? 7 : dow;
     const allJobs = dynamicRouteDays[key] || [];
     const weekNum = getWeekNumber(date);
-    // Biweekly customers only show on even weeks from the reference date
-    return allJobs.filter(j => {
+    // Filter recurring customers by frequency
+    const recurringJobs = allJobs.filter(j => {
       if (j.frequency === "Biweekly") return weekNum % 2 === 0;
       if (j.frequency === "Monthly") {
-        // Monthly: only first occurrence of their route day each month
         const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
         const firstDow = firstOfMonth.getDay();
         const targetDow = dow;
         let firstOccurrence = 1 + ((targetDow - firstDow + 7) % 7);
         return date.getDate() === firstOccurrence;
       }
-      return true; // Weekly and others show every week
+      return true;
     });
+
+    // Add scheduled ad-hoc visits for this specific date
+    const dateStr = date.toISOString().slice(0, 10);
+    const adhocJobs = serviceVisits
+      .filter(v => v.date === dateStr && v.status === "scheduled")
+      .filter(v => {
+        // Only include if the customer is occasional (not already in recurring)
+        const cust = customers.find(c => c.id === v.customer_id);
+        return cust && (cust.frequency === "Occasional" || cust.frequency === "Monthly" || (cust.frequency !== "Weekly" && cust.frequency !== "Biweekly"));
+      })
+      .map(v => {
+        const cust = customers.find(c => c.id === v.customer_id);
+        return {
+          id: cust?.id || v.customer_id,
+          visitId: v.id,
+          name: cust?.name || v.customers?.name || "Customer",
+          addr: cust?.address || "",
+          service: v.service || "Mowing",
+          est: "30 min",
+          price: Number(v.amount) || cust?.price || 0,
+          frequency: "Ad-Hoc",
+          color: "amber",
+          isAdhoc: true,
+        };
+      });
+
+    return [...recurringJobs, ...adhocJobs];
   };
 
   const isToday = (date) => date && date.toDateString() === today.toDateString();
@@ -2828,36 +2854,65 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
             </div>
           )}
 
-          {/* Ad-hoc / Occasional customers — add to a day as needed */}
+          {/* Ad-hoc / Occasional customers — schedule for specific dates */}
           {occasionalCustomers.length > 0 && (
             <div className="mt-4 p-3 bg-blue-950/20 border border-blue-800/30 rounded-xl">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-blue-400 font-bold">Ad-Hoc / Occasional — add to this week as needed</span>
+                <span className="text-xs text-blue-400 font-bold">Ad-Hoc / Occasional — schedule for specific dates</span>
                 <span className="text-[10px] text-stone-600">{occasionalCustomers.length} customer{occasionalCustomers.length !== 1 ? "s" : ""}</span>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {occasionalCustomers.map(c => (
-                  <div key={c.id} className="flex items-center gap-2 bg-stone-800 border border-stone-700 rounded-lg px-2.5 py-1.5">
-                    <div className="min-w-0">
-                      <span className="text-xs font-semibold text-stone-200">{c.name}</span>
-                      <span className="text-[10px] text-stone-500 ml-1.5">${c.price}</span>
+              <div className="space-y-2">
+                {occasionalCustomers.map(c => {
+                  // Show any upcoming scheduled visits for this customer
+                  const upcoming = serviceVisits.filter(v => v.customer_id === c.id && v.status === "scheduled" && v.date >= new Date().toISOString().slice(0, 10));
+                  return (
+                    <div key={c.id} className="bg-stone-800 border border-stone-700 rounded-lg px-3 py-2">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-stone-200">{c.name}</span>
+                          <span className="text-[10px] text-stone-500">${c.price} · {c.service || "Mowing"}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input type="date" min={new Date().toISOString().slice(0, 10)}
+                            className="bg-stone-700 border border-stone-600 rounded text-[10px] text-blue-300 px-1.5 py-1 focus:outline-none focus:border-blue-500"
+                            onChange={async (e) => {
+                              if (!e.target.value) return;
+                              setSaving(true);
+                              await db.createServiceVisit({
+                                customer_id: c.id,
+                                date: e.target.value,
+                                service: c.service || "Mowing",
+                                amount: c.price || 0,
+                                status: "scheduled",
+                                notes: "Ad-hoc — scheduled from route planner",
+                              });
+                              if (onRefreshVisits) await onRefreshVisits();
+                              setSaving(false);
+                              e.target.value = "";
+                            }}
+                          />
+                        </div>
+                      </div>
+                      {upcoming.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {upcoming.map(v => (
+                            <span key={v.id} className="inline-flex items-center gap-1 text-[10px] bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded-full border border-blue-800/40">
+                              {v.date}
+                              <button onClick={async () => {
+                                setSaving(true);
+                                await db.deleteServiceVisit(v.id);
+                                if (onRefreshVisits) await onRefreshVisits();
+                                setSaving(false);
+                              }} className="text-blue-500 hover:text-red-400 ml-0.5">✕</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <select onChange={async (e) => {
-                      if (!e.target.value) return;
-                      // Temporarily set their route_day so they show on the calendar this week
-                      // Also set frequency to Weekly so they appear, then you can revert after
-                      setSaving(true);
-                      await db.updateCustomer(c.id, { route_day: e.target.value, frequency: "Weekly" });
-                      await onRefreshCustomers();
-                      setSaving(false);
-                    }} defaultValue="" className="bg-stone-700 border border-stone-600 rounded text-[10px] text-blue-300 px-1.5 py-0.5">
-                      <option value="" disabled>Add to…</option>
-                      {Object.values(DOW_REVERSE).map(d => <option key={d} value={d}>{d.slice(0,3)}</option>)}
-                    </select>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-              <p className="text-[10px] text-stone-600 mt-2 italic">Adding a customer here sets them to Weekly on that day. Change back to Occasional in the CRM after the job is done.</p>
+              <p className="text-[10px] text-stone-600 mt-2 italic">Pick a date to schedule a one-time visit. It appears on the calendar for that day only and falls off once completed or removed.</p>
             </div>
           )}
           {saving && <div className="mt-3 text-xs text-emerald-400 text-center animate-pulse">Saving…</div>}
@@ -2982,16 +3037,32 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
                     </div>
                     <div className="divide-y divide-stone-800/60">
                       {selectedJobs.map((job, idx) => (
-                        <div key={idx} className="flex items-center gap-3 px-4 py-3">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${colorClass(selectedColor,"badge")}`}>
+                        <div key={job.visitId || idx} className="flex items-center gap-3 px-4 py-3">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${job.isAdhoc ? colorClass("amber","badge") : colorClass(selectedColor,"badge")}`}>
                             {idx + 1}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold text-stone-100 truncate">{job.name}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-stone-100 truncate">{job.name}</span>
+                              {job.isAdhoc && <span className="text-[9px] bg-amber-900/40 text-amber-400 px-1.5 py-0.5 rounded-full font-bold">Ad-Hoc</span>}
+                            </div>
                             <div className="text-xs text-stone-500 truncate">{job.addr}</div>
-                            <div className="text-xs text-stone-600 mt-0.5">{job.service}</div>
+                            <div className="text-xs text-stone-600 mt-0.5">{job.service}{job.price ? ` · $${job.price}` : ""}</div>
                           </div>
-                          <span className={`text-xs font-semibold px-2 py-1 rounded-lg shrink-0 ${colorClass(selectedColor,"badge")}`}>{job.est}</span>
+                          {job.isAdhoc && job.visitId ? (
+                            <div className="flex gap-1.5 shrink-0">
+                              <button onClick={async () => {
+                                await db.updateServiceVisit(job.visitId, { status: "completed" });
+                                if (onRefreshVisits) await onRefreshVisits();
+                              }} className="text-[10px] bg-emerald-900/40 text-emerald-400 px-2 py-1 rounded-lg font-semibold hover:bg-emerald-800/60 transition-all">✓ Done</button>
+                              <button onClick={async () => {
+                                await db.deleteServiceVisit(job.visitId);
+                                if (onRefreshVisits) await onRefreshVisits();
+                              }} className="text-[10px] text-stone-600 hover:text-red-400 px-1 py-1 transition-colors">✕</button>
+                            </div>
+                          ) : (
+                            <span className={`text-xs font-semibold px-2 py-1 rounded-lg shrink-0 ${colorClass(selectedColor,"badge")}`}>{job.est}</span>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -4453,7 +4524,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
         {/* ── ACCOUNTS RECEIVABLE TAB ── */}
         {tab === "ar" && <AccountsReceivableTab customers={customers} serviceVisits={serviceVisits} invoices={invoices} onRefreshInvoices={refreshInvoices} onRefreshVisits={refreshServiceVisits} />}
 
-        {tab === "schedule" && <AdminScheduleCalendar customers={customers} onRefreshCustomers={refreshCustomers} />}
+        {tab === "schedule" && <AdminScheduleCalendar customers={customers} onRefreshCustomers={refreshCustomers} serviceVisits={serviceVisits} onRefreshVisits={refreshServiceVisits} />}
 
         {/* AI ESTIMATOR */}
         {tab === "estimator" && (
