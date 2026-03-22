@@ -2620,11 +2620,13 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
   const getCustomerRouteDay = (c) => c.route_day || legacyRouteDay(c.id);
 
   const activeCustomers = customers.filter(c => c.status === "Active");
+  const recurringCustomers = activeCustomers.filter(c => c.frequency === "Weekly" || c.frequency === "Biweekly");
+  const occasionalCustomers = activeCustomers.filter(c => c.frequency === "Occasional" || c.frequency === "Monthly" || (c.frequency !== "Weekly" && c.frequency !== "Biweekly"));
 
-  // Build ROUTE_DAYS dynamically from customers
+  // Build ROUTE_DAYS dynamically from recurring customers only
   const dynamicRouteDays = {};
   for (let d = 1; d <= 6; d++) dynamicRouteDays[d] = [];
-  activeCustomers.forEach(c => {
+  recurringCustomers.forEach(c => {
     const dayName = getCustomerRouteDay(c);
     const dayNum = DOW_MAP[dayName];
     if (dayNum && dynamicRouteDays[dayNum]) {
@@ -2802,12 +2804,12 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
               );
             })}
           </div>
-          {/* Unassigned customers */}
-          {activeCustomers.filter(c => !getCustomerRouteDay(c) || !DOW_MAP[getCustomerRouteDay(c)]).length > 0 && (
+          {/* Unassigned recurring customers */}
+          {recurringCustomers.filter(c => !getCustomerRouteDay(c) || !DOW_MAP[getCustomerRouteDay(c)]).length > 0 && (
             <div className="mt-4 p-3 bg-amber-950/20 border border-amber-800/30 rounded-xl">
-              <span className="text-xs text-amber-400 font-bold">Unassigned:</span>
+              <span className="text-xs text-amber-400 font-bold">Unassigned Recurring:</span>
               <div className="flex flex-wrap gap-2 mt-2">
-                {activeCustomers.filter(c => !getCustomerRouteDay(c) || !DOW_MAP[getCustomerRouteDay(c)]).map(c => (
+                {recurringCustomers.filter(c => !getCustomerRouteDay(c) || !DOW_MAP[getCustomerRouteDay(c)]).map(c => (
                   <div key={c.id} className="flex items-center gap-2 bg-stone-800 rounded-lg px-2 py-1.5">
                     <span className="text-xs text-stone-300">{c.name}</span>
                     <select onChange={async (e) => {
@@ -2823,6 +2825,39 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers }) => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Ad-hoc / Occasional customers — add to a day as needed */}
+          {occasionalCustomers.length > 0 && (
+            <div className="mt-4 p-3 bg-blue-950/20 border border-blue-800/30 rounded-xl">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-blue-400 font-bold">Ad-Hoc / Occasional — add to this week as needed</span>
+                <span className="text-[10px] text-stone-600">{occasionalCustomers.length} customer{occasionalCustomers.length !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {occasionalCustomers.map(c => (
+                  <div key={c.id} className="flex items-center gap-2 bg-stone-800 border border-stone-700 rounded-lg px-2.5 py-1.5">
+                    <div className="min-w-0">
+                      <span className="text-xs font-semibold text-stone-200">{c.name}</span>
+                      <span className="text-[10px] text-stone-500 ml-1.5">${c.price}</span>
+                    </div>
+                    <select onChange={async (e) => {
+                      if (!e.target.value) return;
+                      // Temporarily set their route_day so they show on the calendar this week
+                      // Also set frequency to Weekly so they appear, then you can revert after
+                      setSaving(true);
+                      await db.updateCustomer(c.id, { route_day: e.target.value, frequency: "Weekly" });
+                      await onRefreshCustomers();
+                      setSaving(false);
+                    }} defaultValue="" className="bg-stone-700 border border-stone-600 rounded text-[10px] text-blue-300 px-1.5 py-0.5">
+                      <option value="" disabled>Add to…</option>
+                      {Object.values(DOW_REVERSE).map(d => <option key={d} value={d}>{d.slice(0,3)}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-stone-600 mt-2 italic">Adding a customer here sets them to Weekly on that day. Change back to Occasional in the CRM after the job is done.</p>
             </div>
           )}
           {saving && <div className="mt-3 text-xs text-emerald-400 text-center animate-pulse">Saving…</div>}
