@@ -396,11 +396,24 @@ export async function deleteInvoice(id) {
 
 export async function getNextInvoiceNumber() {
   if (!isOnline()) return `INV-${Date.now()}`;
-  const { data, error } = await supabase.rpc("nextval", { seq_name: "invoice_number_seq" });
+  const year = new Date().getFullYear().toString().slice(-2); // "26"
+  // Find the highest existing invoice number for this year
+  const { data: invoices, error } = await supabase
+    .from("invoices")
+    .select("invoice_number")
+    .like("invoice_number", `INV-${year}%`)
+    .order("invoice_number", { ascending: false })
+    .limit(1);
   if (error) {
-    // Fallback: count existing invoices
-    const { count } = await supabase.from("invoices").select("*", { count: "exact", head: true });
-    return `INV-${String((count || 0) + 100).padStart(4, "0")}`;
+    console.error("getNextInvoiceNumber:", error);
+    return `INV-${year}-1001`;
   }
-  return `INV-${String(data).padStart(4, "0")}`;
+  if (!invoices || invoices.length === 0) {
+    return `INV-${year}-1001`; // First invoice of the year starts at 1001
+  }
+  // Parse the last number and increment
+  const lastNum = invoices[0].invoice_number;
+  const parts = lastNum.split("-");
+  const seq = parseInt(parts[parts.length - 1], 10) || 1000;
+  return `INV-${year}-${seq + 1}`;
 }
