@@ -2872,25 +2872,26 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers, serviceVisi
                           <span className="text-xs font-semibold text-stone-200">{c.name}</span>
                           <span className="text-[10px] text-stone-500">${c.price} · {c.service || "Mowing"}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <input type="date" min={new Date().toISOString().slice(0, 10)}
+                        <div className="flex items-center gap-1.5">
+                          <input type="date" id={`adhoc-date-${c.id}`} min={new Date().toISOString().slice(0, 10)}
                             className="bg-stone-700 border border-stone-600 rounded text-[10px] text-blue-300 px-1.5 py-1 focus:outline-none focus:border-blue-500"
-                            onChange={async (e) => {
-                              if (!e.target.value) return;
-                              setSaving(true);
-                              await db.createServiceVisit({
-                                customer_id: c.id,
-                                date: e.target.value,
-                                service: c.service || "Mowing",
-                                amount: c.price || 0,
-                                status: "scheduled",
-                                notes: "Ad-hoc — scheduled from route planner",
-                              });
-                              if (onRefreshVisits) await onRefreshVisits();
-                              setSaving(false);
-                              e.target.value = "";
-                            }}
                           />
+                          <button onClick={async () => {
+                            const input = document.getElementById(`adhoc-date-${c.id}`);
+                            if (!input || !input.value) return;
+                            setSaving(true);
+                            await db.createServiceVisit({
+                              customer_id: c.id,
+                              date: input.value,
+                              service: c.service || "Mowing",
+                              amount: c.price || 0,
+                              status: "scheduled",
+                              notes: "Ad-hoc — scheduled from route planner",
+                            });
+                            if (onRefreshVisits) await onRefreshVisits();
+                            setSaving(false);
+                            input.value = "";
+                          }} className="text-[10px] bg-blue-900/40 hover:bg-blue-800/60 text-blue-300 px-2 py-1 rounded-lg font-semibold transition-all">+ Add</button>
                         </div>
                       </div>
                       {upcoming.length > 0 && (
