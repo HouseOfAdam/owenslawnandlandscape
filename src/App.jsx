@@ -4036,6 +4036,20 @@ const AdminPortal = ({ onLogout }) => {
   const netProfit2026 = totalRevenue2026 - totalExpenses2026;
   const maxVal2026 = Math.max(...monthlyRevenue2026, ...monthlyExpenses2026, 1);
 
+  // ── Projected Season Revenue (Weekly + Biweekly only, Apr–Nov) ──
+  const projectedSeasonRevenue = (() => {
+    const seasonMonths = 8; // Apr through Nov
+    const weeksInSeason = seasonMonths * 4.33; // ~34.6 weeks
+    return customers
+      .filter(c => c.status === "Active")
+      .filter(c => c.frequency === "Weekly" || c.frequency === "Biweekly")
+      .reduce((sum, c) => {
+        const price = Number(c.price) || 0;
+        const visitsPerWeek = c.frequency === "Weekly" ? 1 : 0.5;
+        return sum + (price * visitsPerWeek * weeksInSeason);
+      }, 0);
+  })();
+
   // ── Dashboard Season Toggle ───────────────────────────────
   const [dashboardSeason, setDashboardSeason] = useState("2026");
 
@@ -4170,8 +4184,9 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
               </div>
               <Badge color="emerald">Active Season</Badge>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-              <StatCard label="Revenue" value={`$${totalRevenue2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="dollar" color="emerald" />
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6">
+              <StatCard label="Revenue" value={`$${totalRevenue2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD (actual)" icon="dollar" color="emerald" />
+              <StatCard label="Projected Season" value={`$${projectedSeasonRevenue.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub={`Apr–Nov · ${customers.filter(c => c.status === "Active" && (c.frequency === "Weekly" || c.frequency === "Biweekly")).length} recurring`} icon="trending" color="emerald" />
               <StatCard label="Expenses" value={`$${totalExpenses2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="alert" color="red" />
               <StatCard label="Net Profit" value={`$${netProfit2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub={totalRevenue2026 > 0 ? `${((netProfit2026/totalRevenue2026)*100).toFixed(1)}% margin` : "—"} icon="chart" color="blue" />
               <StatCard label="Active Clients" value={`${customers.filter(c=>c.status==="Active").length}`} sub={`of ${customers.length} total`} icon="users" color="amber" />
