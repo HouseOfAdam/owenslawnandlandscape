@@ -2623,6 +2623,13 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers, serviceVisi
   const recurringCustomers = activeCustomers.filter(c => c.frequency === "Weekly" || c.frequency === "Biweekly");
   const occasionalCustomers = activeCustomers.filter(c => c.frequency === "Occasional" || c.frequency === "Monthly" || (c.frequency !== "Weekly" && c.frequency !== "Biweekly"));
 
+  // Compute average duration per customer from completed visits
+  const getAvgDuration = (customerId) => {
+    const custVisits = serviceVisits.filter(v => v.customer_id === customerId && v.status === "completed" && v.duration_minutes);
+    if (custVisits.length === 0) return 30; // default 30 min if no data
+    return Math.round(custVisits.reduce((s, v) => s + v.duration_minutes, 0) / custVisits.length);
+  };
+
   // Build ROUTE_DAYS dynamically from recurring customers only
   const dynamicRouteDays = {};
   for (let d = 1; d <= 6; d++) dynamicRouteDays[d] = [];
@@ -2630,12 +2637,15 @@ const AdminScheduleCalendar = ({ customers = [], onRefreshCustomers, serviceVisi
     const dayName = getCustomerRouteDay(c);
     const dayNum = DOW_MAP[dayName];
     if (dayNum && dynamicRouteDays[dayNum]) {
+      const avgDur = getAvgDuration(c.id);
       dynamicRouteDays[dayNum].push({
         id: c.id,
         name: c.name,
         addr: c.address || "",
         service: c.service || "Mowing",
-        est: c.frequency === "Biweekly" ? "45 min" : "30 min",
+        est: `${avgDur} min`,
+        estMinutes: avgDur,
+        hasRealData: serviceVisits.some(v => v.customer_id === c.id && v.status === "completed" && v.duration_minutes),
         price: c.price || 0,
         frequency: c.frequency || "Weekly",
         color: DOW_COLORS[dayNum] || "stone",
@@ -4100,7 +4110,7 @@ const AdminPortal = ({ onLogout }) => {
   // ── 2026 Service Visits State ─────────────────────────────
   const [serviceVisits, setServiceVisits] = useState([]);
   const [showAddVisit, setShowAddVisit] = useState(false);
-  const [newVisit, setNewVisit] = useState({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "" });
+  const [newVisit, setNewVisit] = useState({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "", duration_minutes: "" });
   const serviceTypes = ["Mowing","Leaf Removal","Landscaping","Mulching","Hedge Trimming","Snow Removal","Spring Cleanup","Fall Cleanup","Other"];
 
   const refreshServiceVisits = useCallback(async () => {
@@ -4359,7 +4369,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                 <h1 className="text-2xl font-extrabold">Service Visits</h1>
                 <p className="text-stone-500 text-sm">Log completed visits — revenue is computed from this data</p>
               </div>
-              <button onClick={() => { setNewVisit({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "" }); setShowAddVisit(true); }} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-all">
+              <button onClick={() => { setNewVisit({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "", duration_minutes: "" }); setShowAddVisit(true); }} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-all">
                 + Log Visit
               </button>
             </div>
@@ -4374,25 +4384,36 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
             {/* Quick-add row: log a completed visit for today */}
             <Card className="mb-5">
               <h3 className="font-bold mb-3 flex items-center gap-2"><Icon name="sparkle" size={16} color="#34d399" /> Quick Log — Today's Visits</h3>
-              <p className="text-stone-500 text-xs mb-3">Tap a customer to log a completed visit at their current rate for today.</p>
+              <p className="text-stone-500 text-xs mb-3">Tap a customer, enter time spent, and log. Duration data improves your route insights over time.</p>
               <div className="flex flex-wrap gap-2">
-                {customers.filter(c => c.status === "Active").map(c => (
-                  <button key={c.id} onClick={async () => {
-                    const saved = await db.createServiceVisit({
-                      customer_id: c.id,
-                      date: new Date().toISOString().slice(0, 10),
-                      service: c.service || "Mowing",
-                      amount: c.price || 0,
-                      status: "completed",
-                      notes: "",
-                    });
-                    if (saved) await refreshServiceVisits();
-                    else setServiceVisits(prev => [...prev, { id: Date.now(), customer_id: c.id, customers: { name: c.name }, date: new Date().toISOString().slice(0,10), service: c.service || "Mowing", amount: c.price || 0, status: "completed", notes: "" }]);
-                  }} className="bg-stone-800 hover:bg-emerald-900/40 border border-stone-700 hover:border-emerald-700 rounded-xl px-3 py-2 text-sm transition-all group">
-                    <span className="font-semibold text-stone-200 group-hover:text-emerald-300">{c.name}</span>
-                    <span className="text-stone-500 ml-1.5 text-xs">${c.price}</span>
-                  </button>
-                ))}
+                {customers.filter(c => c.status === "Active").map(c => {
+                  // Compute avg duration from history
+                  const custVisits = serviceVisits.filter(v => v.customer_id === c.id && v.status === "completed" && v.duration_minutes);
+                  const avgMin = custVisits.length > 0 ? Math.round(custVisits.reduce((s, v) => s + v.duration_minutes, 0) / custVisits.length) : null;
+                  return (
+                    <div key={c.id} className="flex items-center gap-1.5 bg-stone-800 border border-stone-700 rounded-xl px-2 py-1.5 text-sm group">
+                      <span className="font-semibold text-stone-200">{c.name}</span>
+                      <span className="text-stone-500 text-xs">${c.price}</span>
+                      <input type="number" id={`ql-dur-${c.id}`} placeholder={avgMin ? `~${avgMin}` : "min"} min="1" max="300"
+                        className="w-12 bg-stone-700 border border-stone-600 rounded-lg text-[10px] text-center text-stone-300 px-1 py-1 focus:outline-none focus:border-emerald-600" />
+                      <button onClick={async () => {
+                        const durInput = document.getElementById(`ql-dur-${c.id}`);
+                        const dur = durInput?.value ? Number(durInput.value) : null;
+                        const saved = await db.createServiceVisit({
+                          customer_id: c.id,
+                          date: new Date().toISOString().slice(0, 10),
+                          service: c.service || "Mowing",
+                          amount: c.price || 0,
+                          status: "completed",
+                          notes: "",
+                          duration_minutes: dur,
+                        });
+                        if (saved) await refreshServiceVisits();
+                        if (durInput) durInput.value = "";
+                      }} className="text-[10px] bg-emerald-800/50 hover:bg-emerald-700 text-emerald-300 px-2 py-1 rounded-lg font-bold transition-all">✓</button>
+                    </div>
+                  );
+                })}
               </div>
             </Card>
 
@@ -4406,7 +4427,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-stone-800">
-                        {["Date", "Customer", "Service", "Amount", "Status", "Notes", ""].map(h => (
+                        {["Date", "Customer", "Service", "Amount", "Time", "Status", ""].map(h => (
                           <th key={h} className="text-left py-2 px-3 text-stone-500 text-xs uppercase tracking-wider font-semibold">{h}</th>
                         ))}
                       </tr>
@@ -4418,12 +4439,12 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                           <td className="py-2.5 px-3 font-medium text-stone-200">{v.customers?.name || "—"}</td>
                           <td className="py-2.5 px-3 text-stone-400">{v.service}</td>
                           <td className="py-2.5 px-3 text-emerald-400 font-bold">${Number(v.amount).toLocaleString()}</td>
+                          <td className="py-2.5 px-3 text-stone-400 text-xs">{v.duration_minutes ? `${v.duration_minutes} min` : "—"}</td>
                           <td className="py-2.5 px-3">
                             <Badge color={v.status === "completed" ? "green" : v.status === "scheduled" ? "blue" : "amber"}>
                               {v.status}
                             </Badge>
                           </td>
-                          <td className="py-2.5 px-3 text-stone-500 text-xs max-w-[160px] truncate">{v.notes}</td>
                           <td className="py-2.5 px-3 flex gap-2">
                             {v.status === "scheduled" && (
                               <button onClick={async () => { const updated = await db.updateServiceVisit(v.id, { status: "completed" }); if (updated) await refreshServiceVisits(); }} className="text-emerald-500 hover:text-emerald-400 text-xs transition-colors">Complete</button>
@@ -4479,6 +4500,11 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                       </div>
                     </div>
                     <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Duration (minutes)</label>
+                      <input type="number" min="1" max="300" value={newVisit.duration_minutes} onChange={e => setNewVisit(p => ({...p, duration_minutes: e.target.value}))} placeholder="e.g. 30"
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
+                    </div>
+                    <div>
                       <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Status</label>
                       <div className="grid grid-cols-3 gap-2">
                         {["completed", "scheduled", "skipped"].map(s => (
@@ -4507,7 +4533,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                         } else {
                           setServiceVisits(prev => [...prev, { ...newVisit, id: Date.now(), amount: Number(newVisit.amount) }]);
                         }
-                        setNewVisit({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "" });
+                        setNewVisit({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "", duration_minutes: "" });
                         setShowAddVisit(false);
                       }
                     }} disabled={!newVisit.customer_id || !newVisit.amount || Number(newVisit.amount) <= 0}

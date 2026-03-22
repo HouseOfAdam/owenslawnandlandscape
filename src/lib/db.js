@@ -296,16 +296,18 @@ export async function fetchServiceVisits() {
 
 export async function createServiceVisit(visit) {
   if (!isOnline()) return null;
+  const insertData = {
+    customer_id: visit.customer_id,
+    date: visit.date,
+    service: visit.service || "Mowing",
+    amount: Number(visit.amount),
+    status: visit.status || "completed",
+    notes: visit.notes || "",
+  };
+  if (visit.duration_minutes) insertData.duration_minutes = Number(visit.duration_minutes);
   const { data, error } = await supabase
     .from("service_visits")
-    .insert([{
-      customer_id: visit.customer_id,
-      date: visit.date,
-      service: visit.service || "Mowing",
-      amount: Number(visit.amount),
-      status: visit.status || "completed",
-      notes: visit.notes || "",
-    }])
+    .insert([insertData])
     .select("*, customers(name)")
     .single();
   if (error) { console.error("createServiceVisit:", error); return null; }
