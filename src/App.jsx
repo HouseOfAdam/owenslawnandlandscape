@@ -372,7 +372,7 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
       <nav className="fixed top-0 w-full z-50 backdrop-blur border-b border-[#e0d9cf]" style={{ background: "rgba(247,244,239,0.97)", boxShadow: "0 1px 0 rgba(0,0,0,0.05)" }}>
         <div className="max-w-6xl mx-auto px-6 flex items-center justify-between h-16">
           <div className="flex items-center">
-            <img src={OWEN_LOGO} alt="Owen's Lawn + Landscape" className="h-14 w-14 object-contain" />
+            <img src={OWEN_LOGO} alt="Owen's Lawn + Landscape" className="h-20 w-20 object-contain" />
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm">
             <button onClick={() => document.getElementById("services")?.scrollIntoView({ behavior: "smooth" })} className="text-[#5a6e62] hover:text-[#1a4a2e] font-medium transition-colors">Services</button>
