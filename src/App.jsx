@@ -298,118 +298,6 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
   const lInput = "w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors placeholder-stone-300";
   const lLabel = "block text-xs text-[#4a6358] uppercase tracking-wider font-semibold mb-1.5";
 
-  // SEO: inject meta tags + structured data when landing page is shown, clean up on unmount
-  useEffect(() => {
-    const injected = [];
-    const addMeta = (attr, attrVal, content) => {
-      // Remove existing tag if present
-      const existing = document.querySelector(`meta[${attr}="${attrVal}"]`);
-      if (existing) existing.remove();
-      const tag = document.createElement("meta");
-      tag.setAttribute(attr, attrVal);
-      tag.content = content;
-      document.head.appendChild(tag);
-      injected.push(tag);
-    };
-
-    // Page title
-    const prevTitle = document.title;
-    document.title = "Owen's Lawn + Landscape | Lawn Care & Mowing in Bargersville, IN";
-
-    // Core meta
-    addMeta("name", "description", "Professional lawn care, mowing, landscaping, and lawn treatments in Bargersville, Greenwood, and Johnson County, IN. Free estimates — call (317) 868-4699.");
-    addMeta("name", "keywords", "lawn care Bargersville IN, mowing service Greenwood IN, landscaping Bargersville, lawn mowing near me, lawn treatment Johnson County, fall cleanup Bargersville, aeration seeding Greenwood");
-    addMeta("name", "author", "Owen's Lawn + Landscape");
-    addMeta("name", "robots", "index, follow");
-    addMeta("name", "geo.region", "US-IN");
-    addMeta("name", "geo.placename", "Bargersville, Indiana");
-
-    // Open Graph (Facebook, iMessage, link previews)
-    addMeta("property", "og:title", "Owen's Lawn + Landscape | Bargersville & Greenwood, IN");
-    addMeta("property", "og:description", "Professional lawn care and landscaping you can count on — week after week. Free estimates for mowing, landscaping, aeration, and more.");
-    addMeta("property", "og:type", "website");
-    addMeta("property", "og:url", "https://owenslawnandlandscapes.com");
-    addMeta("property", "og:image", "https://owenslawnandlandscapes.com/owen-og.jpg");
-    addMeta("property", "og:locale", "en_US");
-    addMeta("property", "og:site_name", "Owen's Lawn + Landscape");
-
-    // Twitter Card
-    addMeta("name", "twitter:card", "summary_large_image");
-    addMeta("name", "twitter:title", "Owen's Lawn + Landscape | Bargersville & Greenwood, IN");
-    addMeta("name", "twitter:description", "Professional lawn care and landscaping in Bargersville, IN. Free estimates — call (317) 868-4699.");
-    addMeta("name", "twitter:image", "https://owenslawnandlandscapes.com/owen-og.jpg");
-
-    // Canonical URL
-    let canonical = document.querySelector("link[rel='canonical']");
-    if (!canonical) {
-      canonical = document.createElement("link");
-      canonical.rel = "canonical";
-      document.head.appendChild(canonical);
-    }
-    canonical.href = "https://owenslawnandlandscapes.com";
-    injected.push(canonical);
-
-    // JSON-LD Structured Data — LocalBusiness schema
-    const jsonLd = document.createElement("script");
-    jsonLd.type = "application/ld+json";
-    jsonLd.textContent = JSON.stringify({
-      "@context": "https://schema.org",
-      "@type": "LawnAndGardenService",
-      "name": "Owen's Lawn + Landscape",
-      "image": "https://owenslawnandlandscapes.com/owen-og.jpg",
-      "url": "https://owenslawnandlandscapes.com",
-      "telephone": "+1-317-868-4699",
-      "email": "owen@owenslawnandlandscapes.com",
-      "address": {
-        "@type": "PostalAddress",
-        "streetAddress": "4729 N Banta Rd",
-        "addressLocality": "Bargersville",
-        "addressRegion": "IN",
-        "postalCode": "46106",
-        "addressCountry": "US"
-      },
-      "geo": {
-        "@type": "GeoCoordinates",
-        "latitude": 39.5209,
-        "longitude": -86.1678
-      },
-      "areaServed": [
-        { "@type": "City", "name": "Bargersville", "sameAs": "https://en.wikipedia.org/wiki/Bargersville,_Indiana" },
-        { "@type": "City", "name": "Greenwood", "sameAs": "https://en.wikipedia.org/wiki/Greenwood,_Indiana" },
-        { "@type": "City", "name": "Whiteland" },
-        { "@type": "City", "name": "Center Grove" },
-        { "@type": "AdministrativeArea", "name": "Johnson County, IN" }
-      ],
-      "serviceType": ["Lawn Mowing", "Landscaping", "Lawn Treatment", "Aeration & Seeding", "Fall Clean-Up", "Mulch Application"],
-      "priceRange": "$25–$500",
-      "openingHoursSpecification": {
-        "@type": "OpeningHoursSpecification",
-        "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-        "opens": "07:00",
-        "closes": "19:00"
-      },
-      "aggregateRating": {
-        "@type": "AggregateRating",
-        "ratingValue": "5.0",
-        "reviewCount": "4",
-        "bestRating": "5"
-      },
-      "review": [
-        { "@type": "Review", "author": { "@type": "Person", "name": "Deborah W." }, "reviewRating": { "@type": "Rating", "ratingValue": "5" }, "reviewBody": "Owen does fantastic work! My yard has never looked better. Always professional and on time." },
-        { "@type": "Review", "author": { "@type": "Person", "name": "Jason H." }, "reviewRating": { "@type": "Rating", "ratingValue": "5" }, "reviewBody": "Best lawn service in the area. Reliable, thorough, and great pricing. Highly recommend!" },
-        { "@type": "Review", "author": { "@type": "Person", "name": "Ron C." }, "reviewRating": { "@type": "Rating", "ratingValue": "5" }, "reviewBody": "Owen transformed our yard completely. The landscaping work was stunning." }
-      ],
-      "sameAs": []
-    });
-    document.head.appendChild(jsonLd);
-    injected.push(jsonLd);
-
-    return () => {
-      document.title = prevTitle;
-      injected.forEach(el => el.remove());
-    };
-  }, []);
-
   return (
     <div className="min-h-screen text-[#1a1a1a]" style={{ fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif", background: "#f7f4ef" }}>
 
@@ -469,7 +357,7 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
             </div>
             <div className="flex items-center gap-6 mt-10 pt-8 border-t border-[#e0d9cf]">
               <div className="text-center">
-                <div className="text-2xl font-extrabold" style={{ color: "#1a4a2e" }}>12+</div>
+                <div className="text-2xl font-extrabold" style={{ color: "#1a4a2e" }}>9+</div>
                 <div className="text-xs text-[#7a9488] uppercase tracking-wide font-medium mt-0.5">Regular Clients</div>
               </div>
               <div className="w-px h-10 bg-[#e0d9cf]" />
@@ -1355,29 +1243,6 @@ const CustomerPortal = ({ onLogout, customer }) => {
           <div>
             <h1 className="text-2xl font-extrabold mb-1 text-[#111]">Invoices & Payments</h1>
             <p className="text-[#7a9488] text-sm mb-6">View your balance and pay outstanding invoices</p>
-
-            {totalOwed > 0 ? (
-              <div className="rounded-2xl p-5 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4" style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
-                <div>
-                  <div className="text-amber-600 text-sm font-semibold mb-0.5">Outstanding Balance</div>
-                  <div className="text-4xl font-black text-amber-700">${totalOwed.toFixed(2)}</div>
-                  <div className="text-xs text-amber-600/70 mt-1">{outstandingInvoices.length} invoice{outstandingInvoices.length !== 1 ? "s" : ""} · Due on receipt</div>
-                </div>
-                <button onClick={() => setPayModal(outstandingInvoices[0])}
-                  className="text-white font-black px-6 py-3 rounded-2xl text-sm transition-all hover:opacity-90" style={{ background: "#d97706" }}>
-                  Pay ${totalOwed.toFixed(2)} Now
-                </button>
-              </div>
-            ) : (
-              <div className="rounded-2xl p-5 mb-6 flex items-center gap-4" style={{ background: "#e6f2eb", border: "1px solid #b8d4c0" }}>
-                <Icon name="check" size={36} color="#1a4a2e" />
-                <div>
-                  <div className="text-sm font-semibold" style={{ color: "#1a4a2e" }}>All Paid Up!</div>
-                  <div className="text-3xl font-black" style={{ color: "#1a4a2e" }}>$0.00</div>
-                  <div className="text-xs text-[#5a8a6a] mt-0.5">No outstanding invoices</div>
-                </div>
-              </div>
-            )}
 
             {invoicesLoading ? (
               <div className="text-center py-12 text-[#7a9488] text-sm">Loading invoices…</div>
