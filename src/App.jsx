@@ -277,7 +277,7 @@ const HeroActivityBadge = () => {
 const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [estimateOpen, setEstimateOpen] = useState(false);
-  const [formData, setFormData] = useState({ name: "", email: "", phone: "", address: "", service: "", message: "" });
+  const [formData, setFormData] = useState({ name: "", email: "", phone: "", address: "", service: "", message: "", referralCode: "" });
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async () => {
@@ -290,9 +290,11 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
       address: formData.address,
       serviceType: formData.service,
       notes: formData.message,
-      source: "website",
+      source: formData.referralCode.trim() ? "referral" : "website",
+      heardFrom: formData.referralCode.trim() ? "Customer Referral" : "",
+      referralCode: formData.referralCode.trim().toUpperCase(),
     });
-    setTimeout(() => { setEstimateOpen(false); setSubmitted(false); }, 2000);
+    setTimeout(() => { setEstimateOpen(false); setSubmitted(false); setFormData({ name: "", email: "", phone: "", address: "", service: "", message: "", referralCode: "" }); }, 2000);
   };
 
   const lInput = "w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors placeholder-stone-300";
@@ -539,6 +541,11 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
                   <textarea value={formData.message} onChange={e => setFormData({...formData, message: e.target.value})}
                     rows={3} className={`${lInput} resize-none`} />
                 </div>
+                <div>
+                  <label className={lLabel}>Referral Code <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
+                  <input value={formData.referralCode} onChange={e => setFormData({...formData, referralCode: e.target.value.toUpperCase()})}
+                    placeholder="e.g. RON2026" className={lInput} />
+                </div>
                 <button onClick={handleSubmit} className="w-full text-white py-3.5 rounded-xl font-bold transition-opacity hover:opacity-90" style={{ background: "#1a4a2e" }}>
                   Submit Request
                 </button>
@@ -573,8 +580,13 @@ const SignUpForm = ({ onBack, onSubmit }) => {
   const handleSubmit = async () => {
     const lead = { ...form, id: Date.now(), submittedAt: new Date().toLocaleDateString(), status: "New Lead" };
     newLeads.unshift(lead);
-    // Persist to Supabase
-    await db.createLead({ ...form, source: "signup_form" });
+    // Persist to Supabase — if referral code present, mark as referral source
+    const hasReferral = form.referralCode && form.referralCode.trim();
+    await db.createLead({
+      ...form,
+      source: hasReferral ? "referral" : "signup_form",
+      heardFrom: hasReferral ? "Customer Referral" : form.heardFrom,
+    });
     setSubmitted(true);
   };
 
@@ -1027,9 +1039,6 @@ const CustomerPortal = ({ onLogout, customer }) => {
   const [feedbackRating, setFeedbackRating] = useState(5);
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [referralForm, setReferralForm] = useState({ name: "", phone: "", email: "", address: "", serviceInterest: "", notes: "" });
-  const [referralSent, setReferralSent] = useState(false);
-  const [referralSubmitting, setReferralSubmitting] = useState(false);
   const [payModal, setPayModal] = useState(null);
   const [paidInvoices, setPaidInvoices] = useState([]);
 
@@ -1412,7 +1421,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
         {tab === "referral" && (
           <div>
             <h1 className="text-2xl font-extrabold mb-1" style={{ color: "#1a1a1a" }}>Refer a Friend</h1>
-            <p className="text-sm mb-6" style={{ color: "#7a9488" }}>Earn credits when your referral signs up</p>
+            <p className="text-sm mb-6" style={{ color: "#7a9488" }}>Share your code and earn credits when they sign up</p>
 
             {/* Rewards explanation */}
             <Card light className="mb-5">
@@ -1422,7 +1431,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
                 </div>
                 <div>
                   <h3 className="font-bold text-sm" style={{ color: "#1a1a1a" }}>How Referral Credits Work</h3>
-                  <p className="text-xs mt-1" style={{ color: "#7a9488" }}>When your referral becomes a customer, you get a credit applied to your account:</p>
+                  <p className="text-xs mt-1" style={{ color: "#7a9488" }}>Share your code below. When your friend uses it to sign up or request an estimate, you'll get a credit on your account once they become a customer:</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1441,102 +1450,51 @@ const CustomerPortal = ({ onLogout, customer }) => {
 
             {/* Referral code */}
             <Card className="mb-5" style={{ background: "#e6f2eb", borderColor: "#a3c9b0" }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#5a8a6a" }}>Your Referral Code</div>
-                  <div className="font-mono text-lg font-bold tracking-widest mt-1" style={{ color: "#1a4a2e" }}>{customer.referralCode || customer.referral_code}</div>
+              <div className="text-center py-4">
+                <Icon name="share" size={40} color="#1a4a2e" />
+                <h3 className="text-xl font-black mt-3 mb-1" style={{ color: "#1a1a1a" }}>Your Referral Code</h3>
+                <p className="text-sm mb-4" style={{ color: "#4a6358" }}>Have your friend enter this when they request an estimate or sign up</p>
+                <div className="flex items-center justify-center gap-3">
+                  <div className="px-6 py-3 rounded-xl font-mono text-lg font-bold tracking-widest"
+                    style={{ background: "white", border: "1px solid #c8ddd0", color: "#1a4a2e" }}>
+                    {customer.referralCode || customer.referral_code}
+                  </div>
+                  <button onClick={() => {
+                    const code = customer.referralCode || customer.referral_code || "";
+                    navigator.clipboard?.writeText(code);
+                    setCopied(true); setTimeout(() => setCopied(false), 2000);
+                  }} className="px-4 py-3 rounded-xl text-sm font-semibold transition-all text-white"
+                    style={{ background: "#1a4a2e" }}>
+                    {copied ? "Copied!" : "Copy"}
+                  </button>
                 </div>
-                <button onClick={() => {
-                  const code = customer.referralCode || customer.referral_code || "";
-                  navigator.clipboard?.writeText(code);
-                  setCopied(true); setTimeout(() => setCopied(false), 2000);
-                }} className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all text-white" style={{ background: "#1a4a2e" }}>
-                  {copied ? "Copied!" : "Copy Code"}
-                </button>
               </div>
             </Card>
 
-            {/* Referral form */}
-            {referralSent ? (
-              <Card light className="text-center py-10">
-                <Icon name="check" size={40} color="#1a4a2e" />
-                <h3 className="text-xl font-bold mt-3 mb-1" style={{ color: "#1a1a1a" }}>Referral Submitted!</h3>
-                <p className="text-sm" style={{ color: "#7a9488" }}>We'll reach out to them soon. You'll get your credit once they sign up.</p>
-                <button onClick={() => { setReferralSent(false); setReferralForm({ name: "", phone: "", email: "", address: "", serviceInterest: "", notes: "" }); }}
-                  className="mt-4 text-sm font-semibold px-5 py-2.5 rounded-xl transition-all" style={{ background: "#e6f2eb", color: "#1a4a2e" }}>
-                  Refer Another Friend
+            {/* Share buttons */}
+            <Card light>
+              <h3 className="font-bold mb-3" style={{ color: "#1a1a1a" }}>Share With a Friend</h3>
+              <div className="flex flex-col gap-2">
+                <button onClick={() => {
+                  const code = customer.referralCode || customer.referral_code || "";
+                  const msg = `Hey! I use Owen's Lawn + Landscape for my yard and they're great. Use my referral code ${code} when you sign up at owenslawnandlandscapes.com and we both get a credit!`;
+                  if (navigator.share) { navigator.share({ title: "Owen's Lawn + Landscape", text: msg }); }
+                  else { navigator.clipboard?.writeText(msg); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+                }} className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                  style={{ background: "#1a4a2e", color: "white" }}>
+                  <Icon name="share" size={14} color="white" /> Share via Text / App
                 </button>
-              </Card>
-            ) : (
-              <Card light>
-                <h3 className="font-bold mb-1" style={{ color: "#1a1a1a" }}>Refer Someone New</h3>
-                <p className="text-xs mb-4" style={{ color: "#7a9488" }}>Fill in their details and we'll reach out with a free estimate.</p>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Their Name *</label>
-                    <input value={referralForm.name} onChange={e => setReferralForm(f => ({ ...f, name: e.target.value }))}
-                      placeholder="John Smith" className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Phone</label>
-                      <input value={referralForm.phone} onChange={e => setReferralForm(f => ({ ...f, phone: e.target.value }))}
-                        placeholder="(317) 555-0000" className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Email</label>
-                      <input value={referralForm.email} onChange={e => setReferralForm(f => ({ ...f, email: e.target.value }))}
-                        placeholder="john@email.com" className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Their Address</label>
-                    <input value={referralForm.address} onChange={e => setReferralForm(f => ({ ...f, address: e.target.value }))}
-                      placeholder="123 Main St, Bargersville, IN" className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>What service are they interested in?</label>
-                    <div className="flex flex-wrap gap-2">
-                      {["Weekly Mowing", "One-Time Mowing", "Landscaping", "Fall Clean-Up", "Not Sure"].map(s => (
-                        <button key={s} onClick={() => setReferralForm(f => ({ ...f, serviceInterest: s }))}
-                          className="px-3 py-2 rounded-xl text-xs font-semibold transition-all"
-                          style={referralForm.serviceInterest === s
-                            ? { background: "#1a4a2e", color: "white" }
-                            : { background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#4a6358" }}>
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Anything else we should know?</label>
-                    <textarea value={referralForm.notes} onChange={e => setReferralForm(f => ({ ...f, notes: e.target.value }))}
-                      placeholder="e.g. They're my next-door neighbor, big backyard..." rows={2}
-                      className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors resize-none" />
-                  </div>
-                  <button onClick={async () => {
-                    if (!referralForm.name.trim()) return;
-                    setReferralSubmitting(true);
-                    await db.createLead({
-                      name: referralForm.name,
-                      email: referralForm.email,
-                      phone: referralForm.phone,
-                      address: referralForm.address,
-                      serviceType: referralForm.serviceInterest === "Not Sure" ? "Referral" : referralForm.serviceInterest || "Referral",
-                      notes: `Referred by ${customer.name}${referralForm.notes ? ". " + referralForm.notes : ""}`,
-                      heardFrom: "Customer Referral",
-                      referralCode: customer.referralCode || customer.referral_code || "",
-                      source: "referral",
-                    });
-                    setReferralSubmitting(false);
-                    setReferralSent(true);
-                  }} disabled={!referralForm.name.trim() || referralSubmitting}
-                    className="w-full py-3 rounded-xl text-sm font-bold transition-all text-white disabled:opacity-50" style={{ background: "#1a4a2e" }}>
-                    {referralSubmitting ? "Submitting..." : "Submit Referral"}
-                  </button>
-                </div>
-              </Card>
-            )}
+                <button onClick={() => {
+                  const code = customer.referralCode || customer.referral_code || "";
+                  const subject = encodeURIComponent("Check out Owen's Lawn + Landscape!");
+                  const body = encodeURIComponent(`Hey!\n\nI use Owen's Lawn + Landscape for my yard and they do a great job. If you need lawn care, use my referral code ${code} when you sign up at owenslawnandlandscapes.com — we both get a credit!\n\nCheck them out: https://owenslawnandlandscapes.com`);
+                  window.open(`mailto:?subject=${subject}&body=${body}`);
+                }} className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                  style={{ background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#4a6358" }}>
+                  <Icon name="mail" size={14} /> Share via Email
+                </button>
+              </div>
+            </Card>
           </div>
         )}
 
@@ -2052,7 +2010,7 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-4 text-xs text-stone-600">
-                <span>Source: {lead.source === "referral" ? "Referral" : lead.source === "signup_form" ? "Sign-Up Form" : lead.source === "manual" ? "Manual" : "Website"}</span>
+                <span>Source: {lead.source === "referral" ? "🤝 Customer Referral" : lead.source === "signup_form" ? "Sign-Up Form" : lead.source === "manual" ? "Manual" : "Website"}</span>
                 {lead.heard_from && <span>· Via: {lead.heard_from}</span>}
                 {lead.referral_code && <span className="text-emerald-500">· Ref: {lead.referral_code}</span>}
                 <span>· {new Date(lead.created_at).toLocaleDateString()}</span>
@@ -2239,7 +2197,7 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
                     </div>
                     {lead.notes && <div className="text-xs text-stone-500 mt-2 italic truncate max-w-sm">"{lead.notes}"</div>}
                     <div className="text-xs text-stone-600 mt-1">
-                      {lead.source === "referral" ? "Referral" : lead.source === "signup_form" ? "Sign-Up" : "Website"} · {new Date(lead.created_at).toLocaleDateString()}
+                      {lead.source === "referral" ? "🤝 Referral" : lead.source === "signup_form" ? "Sign-Up" : "Website"} · {new Date(lead.created_at).toLocaleDateString()}
                       {lead.lead_notes?.length > 0 && <span className="ml-2 text-stone-500">{lead.lead_notes.length} note{lead.lead_notes.length !== 1 ? "s" : ""}</span>}
                     </div>
                   </div>

@@ -135,20 +135,20 @@ export async function convertLeadToCustomer(leadId) {
   // Add a note to the lead
   await addLeadNote(leadId, `Converted to active customer #${customer.id}`);
 
-  // ── Referral credit: if this lead was referred, credit the referrer ──
-  if (lead.referral_code && lead.source === "referral") {
+  // ── Referral credit: if this lead has a referral code, credit the referrer ──
+  if (lead.referral_code) {
     const { data: referrer } = await supabase
       .from("customers")
       .select("id, name, balance, referral_code")
       .eq("referral_code", lead.referral_code)
       .single();
     if (referrer) {
-      // $50 for ongoing (Weekly/Biweekly/Monthly), $25 for one-off (Occasional/Ad-Hoc)
-      const isOngoing = ["Weekly", "Biweekly", "Monthly"].includes(normalizedFrequency);
+      // $50 for ongoing (Weekly/Biweekly/Monthly), $25 for one-off (Occasional or non-mowing)
+      const isOngoing = ["Weekly", "Biweekly", "Monthly"].includes(normalizedFrequency) && normalizedService === "Mowing";
       const creditAmount = isOngoing ? 50 : 25;
-      const newBalance = Number(referrer.balance || 0) - creditAmount; // negative balance = credit
+      const newBalance = Number(referrer.balance || 0) - creditAmount; // negative balance = credit owed
       await supabase.from("customers").update({ balance: newBalance }).eq("id", referrer.id);
-      await addLeadNote(leadId, `Referral credit of $${creditAmount} applied to ${referrer.name} (${isOngoing ? "ongoing service" : "one-time service"})`);
+      await addLeadNote(leadId, `Referral credit of $${creditAmount} applied to ${referrer.name} (${isOngoing ? "ongoing mowing" : "one-time/other service"})`);
     }
   }
 
