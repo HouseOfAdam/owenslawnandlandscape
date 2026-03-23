@@ -469,7 +469,7 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
             </div>
             <div className="flex items-center gap-6 mt-10 pt-8 border-t border-[#e0d9cf]">
               <div className="text-center">
-                <div className="text-2xl font-extrabold" style={{ color: "#1a4a2e" }}>9+</div>
+                <div className="text-2xl font-extrabold" style={{ color: "#1a4a2e" }}>12+</div>
                 <div className="text-xs text-[#7a9488] uppercase tracking-wide font-medium mt-0.5">Regular Clients</div>
               </div>
               <div className="w-px h-10 bg-[#e0d9cf]" />
