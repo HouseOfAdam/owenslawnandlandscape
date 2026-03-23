@@ -1095,7 +1095,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
     { id: "feedback", label: "Feedback", icon: "star" },
   ];
 
-  const copyCode = () => { setCopied(true); setTimeout(() => setCopied(false), 2000); };
+  const copyCode = () => { navigator.clipboard?.writeText(customer.referral_code || customer.referralCode || ""); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -1421,7 +1421,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
                 <div className="flex items-center justify-center gap-3">
                   <div className="px-6 py-3 rounded-xl font-mono text-lg font-bold tracking-widest"
                     style={{ background: "white", border: "1px solid #c8ddd0", color: "#1a4a2e" }}>
-                    {customer.referralCode}
+                    {customer.referral_code || customer.referralCode}
                   </div>
                   <button onClick={copyCode} className="px-4 py-3 rounded-xl text-sm font-semibold transition-all text-white"
                     style={{ background: "#1a4a2e" }}>
@@ -1433,7 +1433,7 @@ const CustomerPortal = ({ onLogout, customer }) => {
             <Card light>
               <h3 className="font-bold mb-3" style={{ color: "#1a1a1a" }}>Share Your Link</h3>
               <div className="rounded-xl px-4 py-3 text-sm font-mono mb-3 break-all" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#5a6e62" }}>
-                owenslawnandlandscapes.com/ref/{customer.referralCode.toLowerCase()}
+                owenslawnandlandscapes.com/ref/{(customer.referral_code || customer.referralCode || "").toLowerCase()}
               </div>
               <div className="flex gap-2">
                 {["Copy Link", "Share via Text", "Share via Email"].map(label => (
