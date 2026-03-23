@@ -135,6 +135,23 @@ export async function convertLeadToCustomer(leadId) {
   // Add a note to the lead
   await addLeadNote(leadId, `Converted to active customer #${customer.id}`);
 
+  // ── Referral credit: if this lead was referred, credit the referrer ──
+  if (lead.referral_code && lead.source === "referral") {
+    const { data: referrer } = await supabase
+      .from("customers")
+      .select("id, name, balance, referral_code")
+      .eq("referral_code", lead.referral_code)
+      .single();
+    if (referrer) {
+      // $50 for ongoing (Weekly/Biweekly/Monthly), $25 for one-off (Occasional/Ad-Hoc)
+      const isOngoing = ["Weekly", "Biweekly", "Monthly"].includes(normalizedFrequency);
+      const creditAmount = isOngoing ? 50 : 25;
+      const newBalance = Number(referrer.balance || 0) - creditAmount; // negative balance = credit
+      await supabase.from("customers").update({ balance: newBalance }).eq("id", referrer.id);
+      await addLeadNote(leadId, `Referral credit of $${creditAmount} applied to ${referrer.name} (${isOngoing ? "ongoing service" : "one-time service"})`);
+    }
+  }
+
   return customer;
 }
 
@@ -396,24 +413,11 @@ export async function deleteInvoice(id) {
 
 export async function getNextInvoiceNumber() {
   if (!isOnline()) return `INV-${Date.now()}`;
-  const year = new Date().getFullYear().toString().slice(-2); // "26"
-  // Find the highest existing invoice number for this year
-  const { data: invoices, error } = await supabase
-    .from("invoices")
-    .select("invoice_number")
-    .like("invoice_number", `INV-${year}%`)
-    .order("invoice_number", { ascending: false })
-    .limit(1);
+  const { data, error } = await supabase.rpc("nextval", { seq_name: "invoice_number_seq" });
   if (error) {
-    console.error("getNextInvoiceNumber:", error);
-    return `INV-${year}-1001`;
+    // Fallback: count existing invoices
+    const { count } = await supabase.from("invoices").select("*", { count: "exact", head: true });
+    return `INV-${String((count || 0) + 100).padStart(4, "0")}`;
   }
-  if (!invoices || invoices.length === 0) {
-    return `INV-${year}-1001`; // First invoice of the year starts at 1001
-  }
-  // Parse the last number and increment
-  const lastNum = invoices[0].invoice_number;
-  const parts = lastNum.split("-");
-  const seq = parseInt(parts[parts.length - 1], 10) || 1000;
-  return `INV-${year}-${seq + 1}`;
+  return `INV-${String(data).padStart(4, "0")}`;
 }

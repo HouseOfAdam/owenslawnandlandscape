@@ -1027,6 +1027,9 @@ const CustomerPortal = ({ onLogout, customer }) => {
   const [feedbackRating, setFeedbackRating] = useState(5);
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [referralForm, setReferralForm] = useState({ name: "", phone: "", email: "", address: "", serviceInterest: "", notes: "" });
+  const [referralSent, setReferralSent] = useState(false);
+  const [referralSubmitting, setReferralSubmitting] = useState(false);
   const [payModal, setPayModal] = useState(null);
   const [paidInvoices, setPaidInvoices] = useState([]);
 
@@ -1244,6 +1247,29 @@ const CustomerPortal = ({ onLogout, customer }) => {
             <h1 className="text-2xl font-extrabold mb-1 text-[#111]">Invoices & Payments</h1>
             <p className="text-[#7a9488] text-sm mb-6">View your balance and pay outstanding invoices</p>
 
+            {totalOwed > 0 ? (
+              <div className="rounded-2xl p-5 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4" style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+                <div>
+                  <div className="text-amber-600 text-sm font-semibold mb-0.5">Outstanding Balance</div>
+                  <div className="text-4xl font-black text-amber-700">${totalOwed.toFixed(2)}</div>
+                  <div className="text-xs text-amber-600/70 mt-1">{outstandingInvoices.length} invoice{outstandingInvoices.length !== 1 ? "s" : ""} · Due on receipt</div>
+                </div>
+                <button onClick={() => setPayModal(outstandingInvoices[0])}
+                  className="text-white font-black px-6 py-3 rounded-2xl text-sm transition-all hover:opacity-90" style={{ background: "#d97706" }}>
+                  Pay ${totalOwed.toFixed(2)} Now
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-2xl p-5 mb-6 flex items-center gap-4" style={{ background: "#e6f2eb", border: "1px solid #b8d4c0" }}>
+                <Icon name="check" size={36} color="#1a4a2e" />
+                <div>
+                  <div className="text-sm font-semibold" style={{ color: "#1a4a2e" }}>All Paid Up!</div>
+                  <div className="text-3xl font-black" style={{ color: "#1a4a2e" }}>$0.00</div>
+                  <div className="text-xs text-[#5a8a6a] mt-0.5">No outstanding invoices</div>
+                </div>
+              </div>
+            )}
+
             {invoicesLoading ? (
               <div className="text-center py-12 text-[#7a9488] text-sm">Loading invoices…</div>
             ) : effectiveInvoices.length === 0 ? (
@@ -1386,38 +1412,131 @@ const CustomerPortal = ({ onLogout, customer }) => {
         {tab === "referral" && (
           <div>
             <h1 className="text-2xl font-extrabold mb-1" style={{ color: "#1a1a1a" }}>Refer a Friend</h1>
-            <p className="text-sm mb-6" style={{ color: "#7a9488" }}>Earn rewards when friends sign up</p>
-            <Card className="mb-5" style={{ background: "#e6f2eb", borderColor: "#a3c9b0" }}>
-              <div className="text-center py-4">
-                <Icon name="share" size={40} color="#1a4a2e" />
-                <h3 className="text-xl font-black mt-3 mb-1" style={{ color: "#1a1a1a" }}>Your Referral Code</h3>
-                <p className="text-sm mb-4" style={{ color: "#4a6358" }}>Share this code and earn a $10 credit when a friend signs up</p>
-                <div className="flex items-center justify-center gap-3">
-                  <div className="px-6 py-3 rounded-xl font-mono text-lg font-bold tracking-widest"
-                    style={{ background: "white", border: "1px solid #c8ddd0", color: "#1a4a2e" }}>
-                    {customer.referralCode}
-                  </div>
-                  <button onClick={copyCode} className="px-4 py-3 rounded-xl text-sm font-semibold transition-all text-white"
-                    style={{ background: "#1a4a2e" }}>
-                    {copied ? "Copied!" : "Copy"}
-                  </button>
+            <p className="text-sm mb-6" style={{ color: "#7a9488" }}>Earn credits when your referral signs up</p>
+
+            {/* Rewards explanation */}
+            <Card light className="mb-5">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#e6f2eb" }}>
+                  <Icon name="dollar" size={20} color="#1a4a2e" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm" style={{ color: "#1a1a1a" }}>How Referral Credits Work</h3>
+                  <p className="text-xs mt-1" style={{ color: "#7a9488" }}>When your referral becomes a customer, you get a credit applied to your account:</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl p-3 text-center" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf" }}>
+                  <div className="text-2xl font-black" style={{ color: "#1a4a2e" }}>$50</div>
+                  <div className="text-xs font-semibold mt-0.5" style={{ color: "#5a6e62" }}>Ongoing Mowing</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "#7a9488" }}>Weekly or biweekly</div>
+                </div>
+                <div className="rounded-xl p-3 text-center" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf" }}>
+                  <div className="text-2xl font-black" style={{ color: "#1a4a2e" }}>$25</div>
+                  <div className="text-xs font-semibold mt-0.5" style={{ color: "#5a6e62" }}>One-Time Service</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "#7a9488" }}>Any single service</div>
                 </div>
               </div>
             </Card>
-            <Card light>
-              <h3 className="font-bold mb-3" style={{ color: "#1a1a1a" }}>Share Your Link</h3>
-              <div className="rounded-xl px-4 py-3 text-sm font-mono mb-3 break-all" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#5a6e62" }}>
-                owenslawnandlandscapes.com/ref/{customer.referralCode.toLowerCase()}
-              </div>
-              <div className="flex gap-2">
-                {["Copy Link", "Share via Text", "Share via Email"].map(label => (
-                  <button key={label} className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                    style={{ background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#4a6358" }}>
-                    {label}
-                  </button>
-                ))}
+
+            {/* Referral code */}
+            <Card className="mb-5" style={{ background: "#e6f2eb", borderColor: "#a3c9b0" }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#5a8a6a" }}>Your Referral Code</div>
+                  <div className="font-mono text-lg font-bold tracking-widest mt-1" style={{ color: "#1a4a2e" }}>{customer.referralCode || customer.referral_code}</div>
+                </div>
+                <button onClick={() => {
+                  const code = customer.referralCode || customer.referral_code || "";
+                  navigator.clipboard?.writeText(code);
+                  setCopied(true); setTimeout(() => setCopied(false), 2000);
+                }} className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all text-white" style={{ background: "#1a4a2e" }}>
+                  {copied ? "Copied!" : "Copy Code"}
+                </button>
               </div>
             </Card>
+
+            {/* Referral form */}
+            {referralSent ? (
+              <Card light className="text-center py-10">
+                <Icon name="check" size={40} color="#1a4a2e" />
+                <h3 className="text-xl font-bold mt-3 mb-1" style={{ color: "#1a1a1a" }}>Referral Submitted!</h3>
+                <p className="text-sm" style={{ color: "#7a9488" }}>We'll reach out to them soon. You'll get your credit once they sign up.</p>
+                <button onClick={() => { setReferralSent(false); setReferralForm({ name: "", phone: "", email: "", address: "", serviceInterest: "", notes: "" }); }}
+                  className="mt-4 text-sm font-semibold px-5 py-2.5 rounded-xl transition-all" style={{ background: "#e6f2eb", color: "#1a4a2e" }}>
+                  Refer Another Friend
+                </button>
+              </Card>
+            ) : (
+              <Card light>
+                <h3 className="font-bold mb-1" style={{ color: "#1a1a1a" }}>Refer Someone New</h3>
+                <p className="text-xs mb-4" style={{ color: "#7a9488" }}>Fill in their details and we'll reach out with a free estimate.</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Their Name *</label>
+                    <input value={referralForm.name} onChange={e => setReferralForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder="John Smith" className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Phone</label>
+                      <input value={referralForm.phone} onChange={e => setReferralForm(f => ({ ...f, phone: e.target.value }))}
+                        placeholder="(317) 555-0000" className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Email</label>
+                      <input value={referralForm.email} onChange={e => setReferralForm(f => ({ ...f, email: e.target.value }))}
+                        placeholder="john@email.com" className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Their Address</label>
+                    <input value={referralForm.address} onChange={e => setReferralForm(f => ({ ...f, address: e.target.value }))}
+                      placeholder="123 Main St, Bargersville, IN" className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>What service are they interested in?</label>
+                    <div className="flex flex-wrap gap-2">
+                      {["Weekly Mowing", "One-Time Mowing", "Landscaping", "Fall Clean-Up", "Not Sure"].map(s => (
+                        <button key={s} onClick={() => setReferralForm(f => ({ ...f, serviceInterest: s }))}
+                          className="px-3 py-2 rounded-xl text-xs font-semibold transition-all"
+                          style={referralForm.serviceInterest === s
+                            ? { background: "#1a4a2e", color: "white" }
+                            : { background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#4a6358" }}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: "#4a6358" }}>Anything else we should know?</label>
+                    <textarea value={referralForm.notes} onChange={e => setReferralForm(f => ({ ...f, notes: e.target.value }))}
+                      placeholder="e.g. They're my next-door neighbor, big backyard..." rows={2}
+                      className="w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors resize-none" />
+                  </div>
+                  <button onClick={async () => {
+                    if (!referralForm.name.trim()) return;
+                    setReferralSubmitting(true);
+                    await db.createLead({
+                      name: referralForm.name,
+                      email: referralForm.email,
+                      phone: referralForm.phone,
+                      address: referralForm.address,
+                      serviceType: referralForm.serviceInterest === "Not Sure" ? "Referral" : referralForm.serviceInterest || "Referral",
+                      notes: `Referred by ${customer.name}${referralForm.notes ? ". " + referralForm.notes : ""}`,
+                      heardFrom: "Customer Referral",
+                      referralCode: customer.referralCode || customer.referral_code || "",
+                      source: "referral",
+                    });
+                    setReferralSubmitting(false);
+                    setReferralSent(true);
+                  }} disabled={!referralForm.name.trim() || referralSubmitting}
+                    className="w-full py-3 rounded-xl text-sm font-bold transition-all text-white disabled:opacity-50" style={{ background: "#1a4a2e" }}>
+                    {referralSubmitting ? "Submitting..." : "Submit Referral"}
+                  </button>
+                </div>
+              </Card>
+            )}
           </div>
         )}
 
@@ -1933,7 +2052,7 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-4 text-xs text-stone-600">
-                <span>Source: {lead.source === "signup_form" ? "Sign-Up Form" : lead.source === "manual" ? "Manual" : "Website"}</span>
+                <span>Source: {lead.source === "referral" ? "Referral" : lead.source === "signup_form" ? "Sign-Up Form" : lead.source === "manual" ? "Manual" : "Website"}</span>
                 {lead.heard_from && <span>· Via: {lead.heard_from}</span>}
                 {lead.referral_code && <span className="text-emerald-500">· Ref: {lead.referral_code}</span>}
                 <span>· {new Date(lead.created_at).toLocaleDateString()}</span>
@@ -2120,7 +2239,7 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
                     </div>
                     {lead.notes && <div className="text-xs text-stone-500 mt-2 italic truncate max-w-sm">"{lead.notes}"</div>}
                     <div className="text-xs text-stone-600 mt-1">
-                      {lead.source === "signup_form" ? "Sign-Up" : "Website"} · {new Date(lead.created_at).toLocaleDateString()}
+                      {lead.source === "referral" ? "Referral" : lead.source === "signup_form" ? "Sign-Up" : "Website"} · {new Date(lead.created_at).toLocaleDateString()}
                       {lead.lead_notes?.length > 0 && <span className="ml-2 text-stone-500">{lead.lead_notes.length} note{lead.lead_notes.length !== 1 ? "s" : ""}</span>}
                     </div>
                   </div>
