@@ -370,9 +370,9 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
 
       {/* NAV */}
       <nav className="fixed top-0 w-full z-50 backdrop-blur border-b border-[#e0d9cf]" style={{ background: "rgba(247,244,239,0.97)", boxShadow: "0 1px 0 rgba(0,0,0,0.05)" }}>
-        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between h-16">
-          <div className="flex items-center">
-            <img src={OWEN_LOGO} alt="Owen's Lawn + Landscape" className="h-20 w-20 object-contain" />
+        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between h-[108px]">
+          <div className="flex items-center cursor-pointer" onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+            <img src={OWEN_LOGO} alt="Owen's Lawn + Landscape" className="object-contain" style={{ height: 100, width: 100 }} />
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm">
             <button onClick={() => document.getElementById("services")?.scrollIntoView({ behavior: "smooth" })} className="text-[#5a6e62] hover:text-[#1a4a2e] font-medium transition-colors">Services</button>
@@ -397,7 +397,7 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
       </nav>
 
       {/* HERO */}
-      <section className="pt-32 pb-24 px-6 relative overflow-hidden">
+      <section className="pt-40 pb-24 px-6 relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute top-16 right-0 w-[500px] h-[500px] rounded-full opacity-20" style={{ background: "radial-gradient(circle, #a3c9b0, transparent 70%)" }} />
           <div className="absolute -bottom-20 -left-20 w-[400px] h-[400px] rounded-full opacity-10" style={{ background: "radial-gradient(circle, #1a4a2e, transparent 70%)" }} />
