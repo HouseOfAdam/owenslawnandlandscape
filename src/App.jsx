@@ -277,12 +277,11 @@ const HeroActivityBadge = () => {
 const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [estimateOpen, setEstimateOpen] = useState(false);
-  const [formData, setFormData] = useState({ name: "", email: "", phone: "", address: "", service: "", message: "" });
+  const [formData, setFormData] = useState({ name: "", email: "", phone: "", address: "", service: "", message: "", referralCode: "" });
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async () => {
     setSubmitted(true);
-    // Persist lead to Supabase
     await db.createLead({
       name: formData.name,
       email: formData.email,
@@ -290,13 +289,81 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
       address: formData.address,
       serviceType: formData.service,
       notes: formData.message,
-      source: "website",
+      source: formData.referralCode.trim() ? "referral" : "website",
+      heardFrom: formData.referralCode.trim() ? "Customer Referral" : "",
+      referralCode: formData.referralCode.trim().toUpperCase(),
     });
-    setTimeout(() => { setEstimateOpen(false); setSubmitted(false); }, 2000);
+    setTimeout(() => { setEstimateOpen(false); setSubmitted(false); setFormData({ name: "", email: "", phone: "", address: "", service: "", message: "", referralCode: "" }); }, 2000);
   };
 
   const lInput = "w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors placeholder-stone-300";
   const lLabel = "block text-xs text-[#4a6358] uppercase tracking-wider font-semibold mb-1.5";
+
+  // SEO: inject meta tags + structured data when landing page is shown, clean up on unmount
+  useEffect(() => {
+    const injected = [];
+    const addMeta = (attr, attrVal, content) => {
+      const existing = document.querySelector(`meta[${attr}="${attrVal}"]`);
+      if (existing) existing.remove();
+      const tag = document.createElement("meta");
+      tag.setAttribute(attr, attrVal);
+      tag.content = content;
+      document.head.appendChild(tag);
+      injected.push(tag);
+    };
+    const prevTitle = document.title;
+    document.title = "Owen's Lawn + Landscape | Lawn Care & Mowing in Bargersville, IN";
+    addMeta("name", "description", "Professional lawn care, mowing, landscaping, and lawn treatments in Bargersville, Greenwood, and Johnson County, IN. Free estimates — call (317) 868-4699.");
+    addMeta("name", "keywords", "lawn care Bargersville IN, mowing service Greenwood IN, landscaping Bargersville, lawn mowing near me, lawn treatment Johnson County, fall cleanup Bargersville, aeration seeding Greenwood");
+    addMeta("name", "author", "Owen's Lawn + Landscape");
+    addMeta("name", "robots", "index, follow");
+    addMeta("name", "geo.region", "US-IN");
+    addMeta("name", "geo.placename", "Bargersville, Indiana");
+    addMeta("property", "og:title", "Owen's Lawn + Landscape | Bargersville & Greenwood, IN");
+    addMeta("property", "og:description", "Professional lawn care and landscaping you can count on — week after week. Free estimates for mowing, landscaping, aeration, and more.");
+    addMeta("property", "og:type", "website");
+    addMeta("property", "og:url", "https://owenslawnandlandscapes.com");
+    addMeta("property", "og:image", "https://owenslawnandlandscapes.com/owen-og.jpg");
+    addMeta("property", "og:locale", "en_US");
+    addMeta("property", "og:site_name", "Owen's Lawn + Landscape");
+    addMeta("name", "twitter:card", "summary_large_image");
+    addMeta("name", "twitter:title", "Owen's Lawn + Landscape | Bargersville & Greenwood, IN");
+    addMeta("name", "twitter:description", "Professional lawn care and landscaping in Bargersville, IN. Free estimates — call (317) 868-4699.");
+    addMeta("name", "twitter:image", "https://owenslawnandlandscapes.com/owen-og.jpg");
+    let canonical = document.querySelector("link[rel='canonical']");
+    if (!canonical) { canonical = document.createElement("link"); canonical.rel = "canonical"; document.head.appendChild(canonical); }
+    canonical.href = "https://owenslawnandlandscapes.com";
+    injected.push(canonical);
+    const jsonLd = document.createElement("script");
+    jsonLd.type = "application/ld+json";
+    jsonLd.textContent = JSON.stringify({
+      "@context": "https://schema.org", "@type": "LawnAndGardenService",
+      "name": "Owen's Lawn + Landscape", "image": "https://owenslawnandlandscapes.com/owen-og.jpg",
+      "url": "https://owenslawnandlandscapes.com", "telephone": "+1-317-868-4699",
+      "email": "owen@owenslawnandlandscapes.com",
+      "address": { "@type": "PostalAddress", "streetAddress": "4729 N Banta Rd", "addressLocality": "Bargersville", "addressRegion": "IN", "postalCode": "46106", "addressCountry": "US" },
+      "geo": { "@type": "GeoCoordinates", "latitude": 39.5209, "longitude": -86.1678 },
+      "areaServed": [
+        { "@type": "City", "name": "Bargersville", "sameAs": "https://en.wikipedia.org/wiki/Bargersville,_Indiana" },
+        { "@type": "City", "name": "Greenwood", "sameAs": "https://en.wikipedia.org/wiki/Greenwood,_Indiana" },
+        { "@type": "City", "name": "Whiteland" }, { "@type": "City", "name": "Center Grove" },
+        { "@type": "AdministrativeArea", "name": "Johnson County, IN" }
+      ],
+      "serviceType": ["Lawn Mowing", "Landscaping", "Lawn Treatment", "Aeration & Seeding", "Fall Clean-Up", "Mulch Application"],
+      "priceRange": "$25–$500",
+      "openingHoursSpecification": { "@type": "OpeningHoursSpecification", "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"], "opens": "07:00", "closes": "19:00" },
+      "aggregateRating": { "@type": "AggregateRating", "ratingValue": "5.0", "reviewCount": "4", "bestRating": "5" },
+      "review": [
+        { "@type": "Review", "author": { "@type": "Person", "name": "Deborah W." }, "reviewRating": { "@type": "Rating", "ratingValue": "5" }, "reviewBody": "Owen does fantastic work! My yard has never looked better. Always professional and on time." },
+        { "@type": "Review", "author": { "@type": "Person", "name": "Jason H." }, "reviewRating": { "@type": "Rating", "ratingValue": "5" }, "reviewBody": "Best lawn service in the area. Reliable, thorough, and great pricing. Highly recommend!" },
+        { "@type": "Review", "author": { "@type": "Person", "name": "Ron C." }, "reviewRating": { "@type": "Rating", "ratingValue": "5" }, "reviewBody": "Owen transformed our yard completely. The landscaping work was stunning." }
+      ],
+      "sameAs": []
+    });
+    document.head.appendChild(jsonLd);
+    injected.push(jsonLd);
+    return () => { document.title = prevTitle; injected.forEach(el => el.remove()); };
+  }, []);
 
   return (
     <div className="min-h-screen text-[#1a1a1a]" style={{ fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif", background: "#f7f4ef" }}>
@@ -357,7 +424,7 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
             </div>
             <div className="flex items-center gap-6 mt-10 pt-8 border-t border-[#e0d9cf]">
               <div className="text-center">
-                <div className="text-2xl font-extrabold" style={{ color: "#1a4a2e" }}>9+</div>
+                <div className="text-2xl font-extrabold" style={{ color: "#1a4a2e" }}>12+</div>
                 <div className="text-xs text-[#7a9488] uppercase tracking-wide font-medium mt-0.5">Regular Clients</div>
               </div>
               <div className="w-px h-10 bg-[#e0d9cf]" />
@@ -539,6 +606,11 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
                   <textarea value={formData.message} onChange={e => setFormData({...formData, message: e.target.value})}
                     rows={3} className={`${lInput} resize-none`} />
                 </div>
+                <div>
+                  <label className={lLabel}>Referral Code <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
+                  <input value={formData.referralCode} onChange={e => setFormData({...formData, referralCode: e.target.value.toUpperCase()})}
+                    placeholder="e.g. RON2026" className={lInput} />
+                </div>
                 <button onClick={handleSubmit} className="w-full text-white py-3.5 rounded-xl font-bold transition-opacity hover:opacity-90" style={{ background: "#1a4a2e" }}>
                   Submit Request
                 </button>
@@ -573,8 +645,13 @@ const SignUpForm = ({ onBack, onSubmit }) => {
   const handleSubmit = async () => {
     const lead = { ...form, id: Date.now(), submittedAt: new Date().toLocaleDateString(), status: "New Lead" };
     newLeads.unshift(lead);
-    // Persist to Supabase
-    await db.createLead({ ...form, source: "signup_form" });
+    // Persist to Supabase — if referral code present, mark as referral source
+    const hasReferral = form.referralCode && form.referralCode.trim();
+    await db.createLead({
+      ...form,
+      source: hasReferral ? "referral" : "signup_form",
+      heardFrom: hasReferral ? "Customer Referral" : form.heardFrom,
+    });
     setSubmitted(true);
   };
 
@@ -1412,12 +1489,39 @@ const CustomerPortal = ({ onLogout, customer }) => {
         {tab === "referral" && (
           <div>
             <h1 className="text-2xl font-extrabold mb-1" style={{ color: "#1a1a1a" }}>Refer a Friend</h1>
-            <p className="text-sm mb-6" style={{ color: "#7a9488" }}>Earn rewards when friends sign up</p>
+            <p className="text-sm mb-6" style={{ color: "#7a9488" }}>Share your code and earn credits when they sign up</p>
+
+            {/* Rewards explanation */}
+            <Card light className="mb-5">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#e6f2eb" }}>
+                  <Icon name="dollar" size={20} color="#1a4a2e" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm" style={{ color: "#1a1a1a" }}>How Referral Credits Work</h3>
+                  <p className="text-xs mt-1" style={{ color: "#7a9488" }}>Share your code below. When your friend uses it to sign up or request an estimate, you'll get a credit on your account once they become a customer:</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl p-3 text-center" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf" }}>
+                  <div className="text-2xl font-black" style={{ color: "#1a4a2e" }}>$50</div>
+                  <div className="text-xs font-semibold mt-0.5" style={{ color: "#5a6e62" }}>Ongoing Mowing</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "#7a9488" }}>Weekly or biweekly</div>
+                </div>
+                <div className="rounded-xl p-3 text-center" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf" }}>
+                  <div className="text-2xl font-black" style={{ color: "#1a4a2e" }}>$25</div>
+                  <div className="text-xs font-semibold mt-0.5" style={{ color: "#5a6e62" }}>One-Time Service</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "#7a9488" }}>Any single service</div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Referral code */}
             <Card className="mb-5" style={{ background: "#e6f2eb", borderColor: "#a3c9b0" }}>
               <div className="text-center py-4">
                 <Icon name="share" size={40} color="#1a4a2e" />
                 <h3 className="text-xl font-black mt-3 mb-1" style={{ color: "#1a1a1a" }}>Your Referral Code</h3>
-                <p className="text-sm mb-4" style={{ color: "#4a6358" }}>Share this code and earn a $10 credit when a friend signs up</p>
+                <p className="text-sm mb-4" style={{ color: "#4a6358" }}>Have your friend enter this when they request an estimate or sign up</p>
                 <div className="flex items-center justify-center gap-3">
                   <div className="px-6 py-3 rounded-xl font-mono text-lg font-bold tracking-widest"
                     style={{ background: "white", border: "1px solid #c8ddd0", color: "#1a4a2e" }}>
@@ -1430,18 +1534,29 @@ const CustomerPortal = ({ onLogout, customer }) => {
                 </div>
               </div>
             </Card>
+
+            {/* Share buttons */}
             <Card light>
-              <h3 className="font-bold mb-3" style={{ color: "#1a1a1a" }}>Share Your Link</h3>
-              <div className="rounded-xl px-4 py-3 text-sm font-mono mb-3 break-all" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#5a6e62" }}>
-                owenslawnandlandscapes.com/ref/{(customer.referral_code || customer.referralCode || "").toLowerCase()}
-              </div>
-              <div className="flex gap-2">
-                {["Copy Link", "Share via Text", "Share via Email"].map(label => (
-                  <button key={label} className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                    style={{ background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#4a6358" }}>
-                    {label}
-                  </button>
-                ))}
+              <h3 className="font-bold mb-3" style={{ color: "#1a1a1a" }}>Share With a Friend</h3>
+              <div className="flex flex-col gap-2">
+                <button onClick={() => {
+                  const code = customer.referral_code || customer.referralCode || "";
+                  const msg = `Hey! I use Owen's Lawn + Landscape for my yard and they're great. Use my referral code ${code} when you sign up at owenslawnandlandscapes.com and we both get a credit!`;
+                  if (navigator.share) { navigator.share({ title: "Owen's Lawn + Landscape", text: msg }); }
+                  else { navigator.clipboard?.writeText(msg); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+                }} className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                  style={{ background: "#1a4a2e", color: "white" }}>
+                  <Icon name="share" size={14} color="white" /> Share via Text / App
+                </button>
+                <button onClick={() => {
+                  const code = customer.referral_code || customer.referralCode || "";
+                  const subject = encodeURIComponent("Check out Owen's Lawn + Landscape!");
+                  const body = encodeURIComponent(`Hey!\n\nI use Owen's Lawn + Landscape for my yard and they do a great job. If you need lawn care, use my referral code ${code} when you sign up at owenslawnandlandscapes.com — we both get a credit!\n\nCheck them out: https://owenslawnandlandscapes.com`);
+                  window.open(`mailto:?subject=${subject}&body=${body}`);
+                }} className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                  style={{ background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#4a6358" }}>
+                  <Icon name="mail" size={14} /> Share via Email
+                </button>
               </div>
             </Card>
           </div>
@@ -1959,7 +2074,7 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-4 text-xs text-stone-600">
-                <span>Source: {lead.source === "signup_form" ? "Sign-Up Form" : lead.source === "manual" ? "Manual" : "Website"}</span>
+                <span>Source: {lead.source === "referral" ? "🤝 Customer Referral" : lead.source === "signup_form" ? "Sign-Up Form" : lead.source === "manual" ? "Manual" : "Website"}</span>
                 {lead.heard_from && <span>· Via: {lead.heard_from}</span>}
                 {lead.referral_code && <span className="text-emerald-500">· Ref: {lead.referral_code}</span>}
                 <span>· {new Date(lead.created_at).toLocaleDateString()}</span>
@@ -2146,7 +2261,7 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
                     </div>
                     {lead.notes && <div className="text-xs text-stone-500 mt-2 italic truncate max-w-sm">"{lead.notes}"</div>}
                     <div className="text-xs text-stone-600 mt-1">
-                      {lead.source === "signup_form" ? "Sign-Up" : "Website"} · {new Date(lead.created_at).toLocaleDateString()}
+                      {lead.source === "referral" ? "🤝 Referral" : lead.source === "signup_form" ? "Sign-Up" : "Website"} · {new Date(lead.created_at).toLocaleDateString()}
                       {lead.lead_notes?.length > 0 && <span className="ml-2 text-stone-500">{lead.lead_notes.length} note{lead.lead_notes.length !== 1 ? "s" : ""}</span>}
                     </div>
                   </div>
