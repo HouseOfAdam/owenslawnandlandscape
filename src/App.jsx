@@ -4729,7 +4729,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                         className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
                     </div>
                     <button onClick={async () => {
-                      if (newVisit.customer_id && newVisit.amount && Number(newVisit.amount) > 0) {
+                      if (newVisit.customer_id && newVisit.amount !== "" && Number(newVisit.amount) >= 0) {
                         const saved = await db.createServiceVisit(newVisit);
                         if (saved) {
                           await refreshServiceVisits();
@@ -4739,7 +4739,7 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                         setNewVisit({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "", duration_minutes: "" });
                         setShowAddVisit(false);
                       }
-                    }} disabled={!newVisit.customer_id || !newVisit.amount || Number(newVisit.amount) <= 0}
+                    }} disabled={!newVisit.customer_id || newVisit.amount === "" || Number(newVisit.amount) < 0}
                       className="w-full bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-all">
                       Log Visit
                     </button>
