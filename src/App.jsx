@@ -4270,6 +4270,8 @@ const AdminPortal = ({ onLogout }) => {
   const [serviceVisits, setServiceVisits] = useState([]);
   const [showAddVisit, setShowAddVisit] = useState(false);
   const [newVisit, setNewVisit] = useState({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "", duration_minutes: "" });
+  const [editingVisitId, setEditingVisitId] = useState(null);
+  const [editingVisitData, setEditingVisitData] = useState({});
   const serviceTypes = ["Mowing","Leaf Removal","Landscaping","Mulching","Hedge Trimming","Snow Removal","Spring Cleanup","Fall Cleanup","Other"];
 
   const refreshServiceVisits = useCallback(async () => {
@@ -4592,26 +4594,68 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-800/40">
-                      {serviceVisits.map((v) => (
+                      {serviceVisits.map((v) => {
+                        const isEditing = editingVisitId === v.id;
+                        return (
                         <tr key={v.id} className="hover:bg-stone-800/30">
-                          <td className="py-2.5 px-3 text-stone-400">{v.date}</td>
+                          <td className="py-2.5 px-3">
+                            {isEditing ? (
+                              <input type="date" value={editingVisitData.date || ""} onChange={e => setEditingVisitData(p => ({...p, date: e.target.value}))}
+                                className="bg-stone-800 border border-stone-600 rounded-lg px-2 py-1 text-sm text-stone-200 focus:outline-none focus:border-emerald-600 w-36" />
+                            ) : (
+                              <span className="text-stone-400 cursor-pointer hover:text-emerald-400 transition-colors" title="Click to edit"
+                                onClick={() => { setEditingVisitId(v.id); setEditingVisitData({ date: v.date, duration_minutes: v.duration_minutes || "" }); }}>
+                                {v.date}
+                              </span>
+                            )}
+                          </td>
                           <td className="py-2.5 px-3 font-medium text-stone-200">{v.customers?.name || "—"}</td>
                           <td className="py-2.5 px-3 text-stone-400">{v.service}</td>
                           <td className="py-2.5 px-3 text-emerald-400 font-bold">${Number(v.amount).toLocaleString()}</td>
-                          <td className="py-2.5 px-3 text-stone-400 text-xs">{v.duration_minutes ? `${v.duration_minutes} min` : "—"}</td>
+                          <td className="py-2.5 px-3">
+                            {isEditing ? (
+                              <input type="number" min="1" max="300" value={editingVisitData.duration_minutes} onChange={e => setEditingVisitData(p => ({...p, duration_minutes: e.target.value}))}
+                                placeholder="min"
+                                className="bg-stone-800 border border-stone-600 rounded-lg px-2 py-1 text-xs text-stone-200 focus:outline-none focus:border-emerald-600 w-16" />
+                            ) : (
+                              <span className="text-stone-400 text-xs cursor-pointer hover:text-emerald-400 transition-colors" title="Click to edit"
+                                onClick={() => { setEditingVisitId(v.id); setEditingVisitData({ date: v.date, duration_minutes: v.duration_minutes || "" }); }}>
+                                {v.duration_minutes ? `${v.duration_minutes} min` : "—"}
+                              </span>
+                            )}
+                          </td>
                           <td className="py-2.5 px-3">
                             <Badge color={v.status === "completed" ? "green" : v.status === "scheduled" ? "blue" : "amber"}>
                               {v.status}
                             </Badge>
                           </td>
                           <td className="py-2.5 px-3 flex gap-2">
-                            {v.status === "scheduled" && (
-                              <button onClick={async () => { const updated = await db.updateServiceVisit(v.id, { status: "completed" }); if (updated) await refreshServiceVisits(); }} className="text-emerald-500 hover:text-emerald-400 text-xs transition-colors">Complete</button>
+                            {isEditing ? (
+                              <>
+                                <button onClick={async () => {
+                                  const updates = { date: editingVisitData.date };
+                                  if (editingVisitData.duration_minutes !== "") updates.duration_minutes = Number(editingVisitData.duration_minutes);
+                                  else updates.duration_minutes = null;
+                                  const updated = await db.updateServiceVisit(v.id, updates);
+                                  if (updated) await refreshServiceVisits();
+                                  setEditingVisitId(null);
+                                  setEditingVisitData({});
+                                }} className="text-emerald-500 hover:text-emerald-400 text-xs font-bold transition-colors">Save</button>
+                                <button onClick={() => { setEditingVisitId(null); setEditingVisitData({}); }} className="text-stone-500 hover:text-stone-300 text-xs transition-colors">Cancel</button>
+                              </>
+                            ) : (
+                              <>
+                                <button onClick={() => { setEditingVisitId(v.id); setEditingVisitData({ date: v.date, duration_minutes: v.duration_minutes || "" }); }} className="text-stone-500 hover:text-blue-400 text-xs transition-colors">Edit</button>
+                                {v.status === "scheduled" && (
+                                  <button onClick={async () => { const updated = await db.updateServiceVisit(v.id, { status: "completed" }); if (updated) await refreshServiceVisits(); }} className="text-emerald-500 hover:text-emerald-400 text-xs transition-colors">Complete</button>
+                                )}
+                                <button onClick={async () => { await db.deleteServiceVisit(v.id); await refreshServiceVisits(); }} className="text-stone-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                              </>
                             )}
-                            <button onClick={async () => { await db.deleteServiceVisit(v.id); await refreshServiceVisits(); }} className="text-stone-600 hover:text-red-400 text-xs transition-colors">Remove</button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
