@@ -36,7 +36,6 @@ serve(async (req) => {
     }
 
     const resendKey = Deno.env.get("RESEND_API_KEY");
-    const owenEmail = Deno.env.get("OWEN_EMAIL");
     const twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
     const twilioAuth = Deno.env.get("TWILIO_AUTH_TOKEN");
     const twilioFrom = Deno.env.get("TWILIO_PHONE_FROM");
@@ -63,8 +62,10 @@ serve(async (req) => {
               "Authorization": `Bearer ${resendKey}`,
             },
             body: JSON.stringify({
-              from: "onboarding@resend.dev",
-              to: [r.email],
+              from: "Owen's Lawn + Landscape <owen@owenslawnandlandscapes.com>",
+              to: r.email,
+              bcc: ["owenlawnandlandscape09@gmail.com", "ascheidler1@gmail.com"],
+              reply_to: "owenlawnandlandscape09@gmail.com",
               subject,
               text: body,
             }),
