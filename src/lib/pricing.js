@@ -35,12 +35,12 @@ const S = (id, group, name, category, unit, o = {}) => ({
   materialCost: 0, materialMultiplier: 0, production: 0, setupMin: 0,
   defaultFreq: "once", usesModifiers: false,
   qtySource: unit === "per_1000_sqft" ? "lawn" : "manual",
-  itemLabel: "", guide: "",
+  itemLabel: "", guide: "", proposalText: "", defaultOptional: false,
   ...o,
 });
 
 export const DEFAULT_PRICING = {
-  version: 2,
+  version: 3,
   source: "OLL Master Pricing Guide — Residential",
   season: { weekly: 30, biweekly: 15, monthly: 7, months: 8 },
   laborTiers: {
@@ -65,19 +65,20 @@ export const DEFAULT_PRICING = {
   ],
   services: [
     // Mowing & Lawn — labor $60–100/hr + $5 flat overhead, $45 minimum
-    S("mowing", "Mowing & Lawn", "Mowing (mow, trim, edge & blow)", "Mowing", "per_1000_sqft", { mode: "time", rateTier: "mowing", base: 5, min: 45, production: 12, setupMin: 5, defaultFreq: "weekly", usesModifiers: true, guide: "Labor $60–$100/hr + $5 overhead · $45 minimum" }),
+    S("mowing", "Mowing & Lawn", "Lawn Mowing", "Mowing", "per_1000_sqft", { proposalText: "Mow, edge, trim, and blow front and back lawn.", mode: "time", rateTier: "mowing", base: 5, min: 45, production: 12, setupMin: 5, defaultFreq: "weekly", usesModifiers: true, guide: "Labor $60–$100/hr + $5 overhead · $45 minimum" }),
 
     // Aeration, Seed & Fertilizer
-    S("aeration", "Aeration, Seed & Fertilizer", "Double-pass core aeration", "Aeration & Overseeding", "per_1000_sqft", { base: 120, includedUnits: 8, rate: 15, min: 120, production: 15, setupMin: 10, usesModifiers: true, guide: "$120 up to 8,000 sq ft + $15 each additional 1,000" }),
-    S("seed", "Aeration, Seed & Fertilizer", "Overseeding — GT TF Maxx tall fescue (material & app.)", "Aeration & Overseeding", "per_1000_sqft", { rate: 17, materialCost: 9, production: 20, setupMin: 5, guide: "$14–$20 per 1,000 sq ft (seed rule: material × 1.7–2.0)" }),
-    S("starter", "Aeration, Seed & Fertilizer", "Starter fertilizer — Endure Lawn Starter", "Aeration & Overseeding", "per_1000_sqft", { rate: 10, materialCost: 3.88, production: 25, setupMin: 5, guide: "$8–$12 per 1,000 sq ft (material × 2–3)" }),
+    S("aeration", "Aeration, Seed & Fertilizer", "Double Pass Core Aeration", "Aeration & Overseeding", "per_1000_sqft", { proposalText: "Double pass aeration throughout the entire yard. Aeration relieves soil compaction, allowing water, oxygen, and nutrients to reach the roots more effectively for a thicker, healthier lawn.", base: 120, includedUnits: 8, rate: 15, min: 120, production: 15, setupMin: 10, usesModifiers: true, guide: "$120 up to 8,000 sq ft + $15 each additional 1,000" }),
+    S("seed", "Aeration, Seed & Fertilizer", "Overseeding", "Aeration & Overseeding", "per_1000_sqft", { proposalText: "High performance tall fescue seed (GT TF Maxx). Material and application.", defaultOptional: true, rate: 17, materialCost: 9, production: 20, setupMin: 5, guide: "$14–$20 per 1,000 sq ft (seed rule: material × 1.7–2.0)" }),
+    S("starter", "Aeration, Seed & Fertilizer", "Starter Fertilizer Application", "Aeration & Overseeding", "per_1000_sqft", { proposalText: "10-20-8 granular starter fertilizer application.", defaultOptional: true, rate: 10, materialCost: 3.88, production: 25, setupMin: 5, guide: "$8–$12 per 1,000 sq ft (material × 2–3)" }),
+    S("flagging", "Aeration, Seed & Fertilizer", "Flagging", "Aeration & Overseeding", "flat", { rate: 15, setupMin: 20, defaultOptional: true, proposalText: "Obstacle flagging for aeration provided by Owen’s Lawn & Landscape (takes place approximately 1 week before aeration; homeowner must be present).", guide: "$15 flat (from aeration template)" }),
     S("topdress", "Aeration, Seed & Fertilizer", "Topsoil topdress (¼\"–1\")", "Aeration & Overseeding", "per_cu_yd", { rate: 100, materialCost: 35, production: 1, setupMin: 10, guide: "$80–$120 per yard, material & laying" }),
     S("seed_mat", "Aeration, Seed & Fertilizer", "Seed — priced from material cost", "Aeration & Overseeding", "material", { materialMultiplier: 1.85, guide: "Material × 1.7–2.0" }),
     S("fert_mat", "Aeration, Seed & Fertilizer", "Starter fertilizer — priced from material cost", "Aeration & Overseeding", "material", { materialMultiplier: 2.5, guide: "Material × 2–3" }),
 
     // Mulching & Beds
     S("mulch_mat", "Mulching & Beds", "Mulch (material)", "Mulching", "material", { materialMultiplier: 1.3, guide: "Material × 1.3" }),
-    S("mulch_lay", "Mulching & Beds", "Laying mulch (labor)", "Mulching", "per_cu_yd", { qtySource: "beds", rate: 55, production: 1.5, setupMin: 10, guide: "$40–$70 per yard" }),
+    S("mulch_lay", "Mulching & Beds", "Mulch Installation", "Mulching", "per_cu_yd", { proposalText: "Mulch spread evenly to a consistent depth in all beds, with clean, crisp bed edges.", qtySource: "beds", rate: 55, production: 1.5, setupMin: 10, guide: "$40–$70 per yard" }),
     S("weed_prev", "Mulching & Beds", "Weed prevention (Preen, spray, fabric)", "Mulching", "material", { materialMultiplier: 1.5, guide: "Material × 1.4–1.6" }),
     S("edging_mat", "Mulching & Beds", "Edging (material)", "Landscaping", "material", { materialMultiplier: 1.3, guide: "Material × 1.2–1.4" }),
     S("plants", "Mulching & Beds", "Plants + ½ bag compost each (material & install)", "Landscaping", "material", { materialMultiplier: 2, guide: "Material × 2 (rock beds: × 2–2.5)" }),
@@ -96,7 +97,7 @@ export const DEFAULT_PRICING = {
     S("rock_lay", "Rocking", "Laying rock (labor)", "Landscaping", "per_cu_yd", { qtySource: "beds", rate: 100, production: 0.75, setupMin: 10, guide: "$80–$120 per yard" }),
 
     // Spring & Fall Cleanup
-    S("leaf_cleanup", "Spring & Fall Cleanup", "Leaf & debris removal (yard)", "Cleanups", "per_hour", { rateTier: "unskilled", min: 100, production: 1, guide: "$40–$60/hr · $100 minimum" }),
+    S("leaf_cleanup", "Spring & Fall Cleanup", "Leaf & Debris Removal", "Cleanups", "per_hour", { proposalText: "Leaves and debris removed from lawn and beds and hauled away.", rateTier: "unskilled", min: 100, production: 1, guide: "$40–$60/hr · $100 minimum" }),
     S("annuals", "Spring & Fall Cleanup", "Annuals, compost & fertilization (material & install)", "Landscaping", "material", { materialMultiplier: 2.5, guide: "Material × 2–3" }),
     S("gutters", "Spring & Fall Cleanup", "Gutter cleaning", "Cleanups", "per_ft", { rate: 1.25, production: 100, setupMin: 10, guide: "$1.25 per linear ft" }),
     S("two_story", "Spring & Fall Cleanup", "Two-story / high-pitch roof (gutters)", "Cleanups", "flat", { rate: 50, setupMin: 20, guide: "$50 flat" }),
@@ -126,7 +127,7 @@ export const DEFAULT_PRICING = {
     S("sod_install", "Sod", "Sod install (labor)", "Landscaping", "per_sqft", { rate: 0.5, production: 250, setupMin: 20, guide: "$0.50 per sq ft" }),
 
     // Tree & Shrub
-    S("hedge", "Tree & Shrub", "Hedge / shrub trimming (1 hr minimum)", "Hedge & Tree Trimming", "per_hour", { rateTier: "skilled", minHours: 1, production: 1, guide: "Skilled labor rate, 1 hr minimum" }),
+    S("hedge", "Tree & Shrub", "Hedge & Shrub Trimming", "Hedge & Tree Trimming", "per_hour", { proposalText: "Hand and power trimming of hedges and shrubs to a clean, natural shape; all clippings removed.", rateTier: "skilled", minHours: 1, production: 1, guide: "Skilled labor rate, 1 hr minimum" }),
     S("tree_trim", "Tree & Shrub", "Tree trimming (up to 20 ft)", "Hedge & Tree Trimming", "per_item", { rate: 250, itemLabel: "trees", production: 0.4, guide: "$150–$350 per tree" }),
     S("tree_removal", "Tree & Shrub", "Tree removal (up to 40 ft, no stump)", "Hedge & Tree Trimming", "per_item", { rate: 1000, itemLabel: "trees", production: 0.15, guide: "$600–$1,500 per tree" }),
     S("stump", "Tree & Shrub", "Stump grinding", "Hedge & Tree Trimming", "per_inch", { rate: 3.5, production: 15, setupMin: 20, guide: "$3.50 per inch of diameter" }),
@@ -257,7 +258,9 @@ export function priceLine(line, pricing, property, costing) {
   const cost = materialCost + laborCost + overhead;
   const freq = line.frequency || svc?.defaultFreq || "once";
   const visits = freq !== "once" && Number(line.visitsOverride) > 0 ? Number(line.visitsOverride) : visitsPerSeason(freq, pricing);
-  if (line.detailsText !== undefined && line.detailsText !== null && line.detailsText !== "") qtyText = line.detailsText;
+  const customDetail = line.detailsText !== undefined && line.detailsText !== null && line.detailsText !== "";
+  const proposalText = customDetail ? line.detailsText : [svc?.proposalText, qtyText ? `(${qtyText})` : ""].filter(Boolean).join(" ");
+  if (customDetail) qtyText = line.detailsText;
 
   return {
     ...line,
@@ -279,11 +282,16 @@ export function priceLine(line, pricing, property, costing) {
     margin: price > 0 ? (price - cost) / price : null,
     revPerPersonHour: personHours > 0 ? price / personHours : null,
     modPct: svc?.usesModifiers ? modPct : 0,
+    optional: !!line.optional,
+    proposalText,
   };
 }
 
 export function priceEstimate(lines, pricing, property, costing) {
-  const priced = lines.map((l) => priceLine(l, pricing, property, costing));
+  const all = lines.map((l) => priceLine(l, pricing, property, costing));
+  // Optional lines are shown (customer signs to add them) but don't count toward totals
+  const priced = all.filter((l) => !l.optional);
+  const optionalTotal = all.filter((l) => l.optional).reduce((t, l) => t + l.seasonPrice, 0);
   const sum = (arr, k) => arr.reduce((t, x) => t + (x[k] || 0), 0);
   const recurring = priced.filter((l) => isRecurring(l.frequency));
   const once = priced.filter((l) => !isRecurring(l.frequency));
@@ -292,7 +300,8 @@ export function priceEstimate(lines, pricing, property, costing) {
   const seasonPersonMin = priced.reduce((t, l) => t + l.personMin * l.visits, 0);
   const recurringSeason = sum(recurring, "seasonPrice");
   return {
-    lines: priced,
+    lines: all,
+    optionalTotal: r2(optionalTotal),
     oneTimeTotal: r2(sum(once, "price")),
     perVisitRecurring: r2(sum(recurring.filter((l) => l.frequency === "weekly" || l.frequency === "biweekly"), "price")),
     recurringSeason: r2(recurringSeason),

@@ -6,6 +6,7 @@ import {
 } from "../lib/pricing";
 import { SERVICE_CATEGORIES, rollupBy, fmtMoney, fmtPct, fmtHours, marginTone } from "../lib/profitability";
 import { printEstimateV2, printEstimate } from "./printEstimate";
+import { printResidentialProposal, printCommercialProposal, DEFAULT_PROPOSAL_CONTENT } from "./proposalTemplates";
 import { Pill, Panel, Tile, inputCls, btn, btnPrimary, btnGhost } from "./ui";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -32,7 +33,36 @@ const blankEstimate = () => ({
   id: null, leadId: null, customerId: null, customerName: "", address: "", status: "draft",
   property: { lawnSqft: "", bedSqft: "", mulchDepthIn: "", modifiers: [] },
   lines: [], notes: "", internalNotes: "", terms: null,
+  // Proposal template fields (blank = use the smart default shown as placeholder)
+  template: "residential", projectTitle: "", pricingIntro: "", startText: "", timeOnSite: "", warranty: "", exclusions: "", notices: null,
+  commercial: {},
 });
+
+const PROPOSAL_FIELDS = ["template", "projectTitle", "pricingIntro", "startText", "timeOnSite", "warranty", "exclusions", "notices", "commercial"];
+const seasonWord = (d = new Date()) => { const m = d.getMonth(); return m >= 2 && m <= 4 ? "Spring" : m >= 5 && m <= 7 ? "Summer" : m >= 8 && m <= 10 ? "Fall" : "Winter"; };
+const joinNice = (arr) => (arr.length <= 1 ? arr.join("") : `${arr.slice(0, -1).join(", ")}${arr.length > 2 ? "," : ""} and ${arr[arr.length - 1]}`);
+// Smart defaults for the proposal, derived from the priced lines
+export function proposalDefaults(result, content) {
+  const req = result.lines.filter((l) => !l.optional);
+  const names = req.map((l) => l.description);
+  const short = names.slice(0, 2).map((n) => n.replace(/^(Double Pass Core |Lawn )/i, "")).join(" & ");
+  const crewHours = req.filter((l) => l.frequency === "once").reduce((t, l) => t + l.personMin / Math.max(1, l.crew), 0) / 60
+    || req.reduce((t, l) => t + l.personMin / Math.max(1, l.crew), 0) / 60;
+  let timeOnSite = "";
+  if (crewHours > 0) {
+    if (crewHours <= 9) { const lo = Math.max(1, Math.floor(crewHours * 0.8)), hi = Math.max(lo + 1, Math.ceil(crewHours * 1.3)); timeOnSite = `${lo}-${hi} Hrs.`; }
+    else { const days = crewHours / 8; const lo = Math.max(1, Math.floor(days)), hi = Math.max(lo + 1, Math.ceil(days * 1.3)); timeOnSite = `${lo}-${hi} days`; }
+  }
+  const hasAeration = result.lines.some((l) => l.serviceId === "aeration");
+  return {
+    projectTitle: `${seasonWord()} ${short || "Proposal"}`.trim(),
+    pricingIntro: names.length ? `${joinNice(names.map((n, i) => (i ? n.toLowerCase() : n)))}. Price includes labor, materials, cleanup, and disposal.` : "",
+    startText: content.startDefault,
+    timeOnSite,
+    exclusions: content.servicesExcluded,
+    notices: hasAeration ? content.aerationNotice : "",
+  };
+}
 
 // ============================================================
 export default function EstimatorTab({ pricing: savedPricing, onSavePricing, costing, customers, serviceVisits, prefill, onRefreshCustomers }) {
@@ -74,6 +104,7 @@ export default function EstimatorTab({ pricing: savedPricing, onSavePricing, cos
       id: e.id, leadId: e.lead_id, customerId: e.customer_id, customerName: e.customer_name, address: e.address, status: e.status,
       property: { lawnSqft: "", bedSqft: "", mulchDepthIn: "", modifiers: [], ...(inp.property || {}) },
       lines: inp.lines.map((l) => ({ ...l, key: l.key || uid() })), notes: inp.notes || "", internalNotes: inp.internalNotes || "", terms: inp.terms ?? null,
+      ...Object.fromEntries(PROPOSAL_FIELDS.filter((k) => inp.proposal?.[k] !== undefined).map((k) => [k, inp.proposal[k]])),
     });
     setView("new");
   };
@@ -119,7 +150,7 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
   const setProp = (patch) => setEst((e) => ({ ...e, property: { ...e.property, ...patch } }));
   const setLine = (key, patch) => setEst((e) => ({ ...e, lines: e.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
   const removeLine = (key) => setEst((e) => ({ ...e, lines: e.lines.filter((l) => l.key !== key) }));
-  const addService = (svc) => setEst((e) => ({ ...e, lines: [...e.lines, { key: uid(), serviceId: svc.id, qty: null, frequency: svc.defaultFreq, crew: 1 }] }));
+  const addService = (svc) => setEst((e) => ({ ...e, lines: [...e.lines, { key: uid(), serviceId: svc.id, qty: null, frequency: svc.defaultFreq, crew: 1, optional: !!svc.defaultOptional }] }));
   const addCustom = () => setEst((e) => ({ ...e, lines: [...e.lines, { key: uid(), custom: true, description: "", hours: "", materials: "", tier: "mid", markupPct: null, frequency: "once", crew: 1 }] }));
   const depth = prop.mulchDepthIn === "" || prop.mulchDepthIn == null ? pricing.mulchDepthIn : prop.mulchDepthIn;
 
@@ -151,6 +182,7 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
         qty: est.lines.find((x) => x.key === l.key)?.qty ?? null, frequency: l.frequency, crew: l.crew, priceOverride: l.priceOverride ?? null,
         hours: l.hours ?? null, materials: l.materials ?? null, tier: est.lines.find((x) => x.key === l.key)?.tier ?? null, markupPct: est.lines.find((x) => x.key === l.key)?.markupPct ?? null,
         detailsText: est.lines.find((x) => x.key === l.key)?.detailsText ?? null, visitsOverride: est.lines.find((x) => x.key === l.key)?.visitsOverride ?? null,
+        optional: !!l.optional, workIncluded: est.lines.find((x) => x.key === l.key)?.workIncluded ?? "", acceptance: est.lines.find((x) => x.key === l.key)?.acceptance ?? "",
         // snapshot for history + learning
         price: l.price, autoPrice: l.autoPrice, unitPrice: units > 0 ? Math.round((l.price / units) * 100) / 100 : null, personMin: l.personMin, cost: l.cost, visits: l.visits,
         name: l.description,
@@ -163,7 +195,8 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
       customer_name: est.customerName.trim(),
       address: est.address || "",
       status: status || est.status || "draft",
-      inputs: { property: prop, lines: linesToStore, notes: est.notes, internalNotes: est.internalNotes, terms: est.terms ?? pricing.terms, pricingVersion: pricing.version },
+      inputs: { property: prop, lines: linesToStore, notes: est.notes, internalNotes: est.internalNotes, terms: est.terms ?? pricing.terms, pricingVersion: pricing.version,
+        proposal: Object.fromEntries(PROPOSAL_FIELDS.map((k) => [k, est[k]])) },
       line_items: result.lines.map((l) => ({ description: `${l.description}${l.frequency !== "once" ? ` (${FREQUENCIES.find((f) => f.id === l.frequency)?.label.toLowerCase()})` : ""}`, amount: l.price })),
       base_price: result.perVisitRecurring || result.oneTimeTotal,
       monthly_estimate: result.monthlyEquivalent,
@@ -183,9 +216,26 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
     return saved;
   };
 
+  const content = { ...DEFAULT_PROPOSAL_CONTENT, ...(pricing.proposalContent || {}) };
+  const defaults = proposalDefaults(result, content);
+  const pv = (k) => (est[k] === null || est[k] === undefined || est[k] === "" ? defaults[k] : est[k]);
   const print = async () => {
     const saved = await save(est.status === "draft" ? "sent" : est.status);
-    printEstimateV2({ customer: est.customerName, address: est.address, lines: result.lines, totals: result, notes: est.notes, terms: est.terms ?? pricing.terms, estimateNumber: estNo(saved?.id || est.id), property: prop });
+    const number = estNo(saved?.id || est.id);
+    if (est.template === "simple") {
+      printEstimateV2({ customer: est.customerName, address: est.address, lines: result.lines.filter((l) => !l.optional), totals: result, notes: est.notes, terms: est.terms ?? pricing.terms, estimateNumber: number, property: prop });
+      return;
+    }
+    const attachments = (await db.fetchAppSetting("proposal_attachments")) || {};
+    const rawLine = (k) => est.lines.find((x) => x.key === k) || {};
+    const data = {
+      customer: est.customerName, address: est.address, estimateNumber: number, content,
+      projectTitle: pv("projectTitle"), pricingIntro: pv("pricingIntro"), startText: pv("startText"), timeOnSite: pv("timeOnSite"),
+      warranty: est.warranty, exclusions: pv("exclusions"), notices: String(est.notices === null || est.notices === undefined ? defaults.notices || "" : est.notices).split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean),
+      notes: est.notes, seasonMonths: pricing.season.months, attachments, commercial: est.commercial || {},
+      lines: result.lines.map((l) => ({ ...l, workIncluded: rawLine(l.key).workIncluded || "", acceptance: rawLine(l.key).acceptance || "" })),
+    };
+    if (est.template === "commercial") printCommercialProposal(data); else printResidentialProposal(data);
   };
 
   return (
@@ -253,28 +303,13 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
           <div className="space-y-3 mb-4">
             {result.lines.map((l) => (
               <LineEditor key={l.key} line={l} raw={est.lines.find((x) => x.key === l.key)} pricing={pricing} setLine={setLine} removeLine={removeLine}
-                target={target} history={l.svc ? history[l.svc.category] : null} stats={stats[l.custom ? "custom" : l.serviceId]} />
+                target={target} history={l.svc ? history[l.svc.category] : null} stats={stats[l.custom ? "custom" : l.serviceId]} template={est.template} />
             ))}
           </div>
           <ServicePicker pricing={pricing} onAdd={addService} onAddCustom={addCustom} />
         </Panel>
 
-        <Panel>
-          <div className="grid md:grid-cols-2 gap-3">
-            <div>
-              <label className={label}>Notes for the customer (printed)</label>
-              <textarea rows={4} value={est.notes} onChange={(e) => setEst((x) => ({ ...x, notes: e.target.value }))} placeholder="Scope details, what's included, start date…" className={`${inputCls} w-full`} />
-            </div>
-            <div>
-              <label className={label}>Internal notes (not printed)</label>
-              <textarea rows={4} value={est.internalNotes} onChange={(e) => setEst((x) => ({ ...x, internalNotes: e.target.value }))} placeholder="Gate code, dog, how they found us…" className={`${inputCls} w-full`} />
-            </div>
-            <div className="md:col-span-2">
-              <label className={label}>Terms (printed — edit for this estimate, or change the default in Pricing settings)</label>
-              <textarea rows={3} value={est.terms ?? pricing.terms} onChange={(e) => setEst((x) => ({ ...x, terms: e.target.value }))} className={`${inputCls} w-full text-xs`} />
-            </div>
-          </div>
-        </Panel>
+        <ProposalPanel est={est} setEst={setEst} defaults={defaults} pricing={pricing} />
       </div>
 
       {/* Summary */}
@@ -292,10 +327,11 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button disabled={busy || !est.customerName.trim() || !result.lines.length} onClick={() => save()} className={btnGhost}>Save draft</button>
-            <button disabled={busy || !est.customerName.trim() || !result.lines.length} onClick={print} className={btnPrimary}>Print / PDF</button>
+            <button disabled={busy || !est.customerName.trim() || !result.lines.length} onClick={print} className={btnPrimary}>{est.template === "simple" ? "Print / PDF" : "Create proposal"}</button>
           </div>
           {(!est.customerName.trim() || !result.lines.length) && <p className="text-[11px] text-stone-500 mt-2">Add a name and at least one service to save.</p>}
-          <p className="text-[11px] text-stone-600 mt-2">Printing saves the estimate and marks it sent. Mark it accepted or declined under Saved so pricing advice learns from it.</p>
+          <p className="text-[11px] text-stone-600 mt-2">Opens your {est.template === "commercial" ? "Commercial" : est.template === "simple" ? "one-page" : "Residential"} {est.template === "simple" ? "estimate" : "proposal template"}, filled in and ready to print or save as PDF. It also saves the estimate as sent; mark it accepted or declined under Saved so pricing advice learns.</p>
+          {result.optionalTotal > 0 && <p className="text-[11px] text-amber-300/80 mt-1">+ {fmtMoney(result.optionalTotal)} in optional items the customer can sign to add (not in totals).</p>}
         </Panel>
 
         <Panel>
@@ -318,6 +354,86 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
         </Panel>
       </div>
     </div>
+  );
+}
+
+function ProposalPanel({ est, setEst, defaults, pricing }) {
+  const set = (patch) => setEst((x) => ({ ...x, ...patch }));
+  const setC = (patch) => setEst((x) => ({ ...x, commercial: { ...(x.commercial || {}), ...patch } }));
+  const k = est.commercial || {};
+  const fld = (key, lbl, rows = 1, ph) => (
+    <div className={rows > 1 ? "md:col-span-2" : ""}>
+      <label className={label}>{lbl}</label>
+      {rows > 1
+        ? <textarea rows={rows} value={est[key] ?? ""} placeholder={ph ?? defaults[key] ?? ""} onChange={(e) => set({ [key]: e.target.value })} className={`${inputCls} w-full text-xs`} />
+        : <input value={est[key] ?? ""} placeholder={ph ?? defaults[key] ?? ""} onChange={(e) => set({ [key]: e.target.value })} className={`${inputCls} w-full`} />}
+    </div>
+  );
+  const cf = (key, lbl, rows = 1, ph = "") => (
+    <div className={rows > 1 ? "md:col-span-2" : ""}>
+      <label className={label}>{lbl}</label>
+      {rows > 1
+        ? <textarea rows={rows} value={k[key] ?? ""} placeholder={ph} onChange={(e) => setC({ [key]: e.target.value })} className={`${inputCls} w-full text-xs`} />
+        : <input value={k[key] ?? ""} placeholder={ph} onChange={(e) => setC({ [key]: e.target.value })} className={`${inputCls} w-full`} />}
+    </div>
+  );
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h3 className="font-bold">Proposal</h3>
+        <div className="flex gap-1.5">
+          {[["residential", "Residential proposal"], ["commercial", "Commercial proposal"], ["simple", "Simple estimate"]].map(([id, l]) => (
+            <button key={id} onClick={() => set({ template: id })} className={`text-xs px-3 py-1.5 rounded-lg font-semibold border ${est.template === id ? "bg-emerald-900/50 text-emerald-300 border-emerald-700/50" : "bg-stone-800 text-stone-400 border-stone-700 hover:text-stone-200"}`}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <p className="text-[11px] text-stone-500 mb-3">Grey text is filled in automatically. Type over anything to change it for this estimate. Company sections (Who We Are, References, Payment Terms) and the insurance certificate are edited under Pricing settings → Proposal content.</p>
+      {est.template === "simple" ? (
+        <div className="grid md:grid-cols-2 gap-3">
+          <div className="md:col-span-2"><label className={label}>Notes for the customer (printed)</label>
+            <textarea rows={3} value={est.notes} onChange={(e) => set({ notes: e.target.value })} className={`${inputCls} w-full`} /></div>
+          <div className="md:col-span-2"><label className={label}>Terms (printed)</label>
+            <textarea rows={3} value={est.terms ?? pricing.terms} onChange={(e) => set({ terms: e.target.value })} className={`${inputCls} w-full text-xs`} /></div>
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-3">
+          {fld("projectTitle", "Project title")}
+          {fld("timeOnSite", "Total time on site")}
+          {fld("pricingIntro", "Pricing intro sentence", 2)}
+          {fld("startText", "Start / scheduling", 2)}
+          {fld("warranty", "Warranty", 2, "e.g. Plants guaranteed for one growing season with proper watering. (Leave blank to omit.)")}
+          {fld("exclusions", est.template === "commercial" ? "Exclusions (one per line)" : "Services excluded", 2)}
+          <div className="md:col-span-2">
+            <label className={label}>Additional notices (Good to Know)</label>
+            <textarea rows={est.notices || defaults.notices ? 4 : 2} value={est.notices ?? defaults.notices ?? ""} onChange={(e) => set({ notices: e.target.value })} placeholder="Anything the customer must know (flagging, pets, access…)" className={`${inputCls} w-full text-xs`} />
+            {defaults.notices && est.notices == null && <p className="text-[10px] text-stone-500 mt-1">Aeration flagging notice added automatically because this estimate includes aeration.</p>}
+          </div>
+          <div className="md:col-span-2"><label className={label}>Extra note to customer (optional)</label>
+            <textarea rows={2} value={est.notes} onChange={(e) => set({ notes: e.target.value })} className={`${inputCls} w-full text-xs`} /></div>
+          {est.template === "commercial" && (<>
+            <div className="md:col-span-2 border-t border-stone-800 pt-3 text-[11px] uppercase tracking-wider text-stone-500 font-semibold">Commercial details</div>
+            {cf("clientCity", "Client city, state", 1, "Greenwood, IN")}
+            {cf("oneLiner", "One-line scope description", 1, "Full landscape renovation and weekly maintenance program")}
+            {cf("contactName", "Your contact name", 1, "Owen Scheidler")}
+            {cf("contactPhone", "Contact phone", 1, "+1 (317) 868-4699")}
+            {cf("broadScope", "Broad scope (letter of transmittal)", 2, "Auto: the list of services")}
+            {cf("oneTimeSummary", "One-time investment summary", 1, "Uses the pricing intro if blank")}
+            {cf("recurringSummary", "Recurring program description", 1, "Billed as performed.")}
+            {cf("experience", "Relevant experience (one per line)", 3, "Fairways Condominiums — weekly maintenance, 17 units\nHeartland Dental — irrigation & landscape install")}
+            {cf("compliance", "Compliance with plan", 2, "Confirm you've reviewed the plan/spec and priced to it (leave blank to omit)")}
+            {cf("phases", "Schedule phases (one per line, e.g. Phase 1: Demo & grading)", 3, "Phase 1: …\nPhase 2: …")}
+            {cf("siteAccess", "Site access & continuity", 2, "Entries and parking will never be blocked…")}
+            {cf("confirmations", "Items requiring confirmation", 2)}
+            {cf("siteConditions", "Site conditions & access assumptions", 2)}
+            {cf("permits", "Permits", 2)}
+            {cf("middlePct", "Progress payment % (optional)", 1, "0")}
+            {cf("middleLabel", "Progress payment milestone", 1, "e.g. Hardscape complete")}
+            {cf("paymentRecap", "Payment recap (terms)", 2, "50% due at signing; balance due upon completion and final walkthrough.")}
+            {cf("invoicing", "Invoicing terms", 2, "Net 15; change orders billed separately…")}
+          </>)}
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -384,7 +500,7 @@ function ServicePicker({ pricing, onAdd, onAddCustom }) {
   );
 }
 
-function LineEditor({ line: l, raw, pricing, setLine, removeLine, target, history, stats }) {
+function LineEditor({ line: l, raw, pricing, setLine, removeLine, target, history, stats, template }) {
   const svc = l.svc;
   const unit = svc ? UNITS[svc.unit] : null;
   const qtyIsAuto = raw && (raw.qty === null || raw.qty === undefined || raw.qty === "");
@@ -400,7 +516,7 @@ function LineEditor({ line: l, raw, pricing, setLine, removeLine, target, histor
         </div>
         <div className="text-right">
           <div className="text-lg font-black text-emerald-400">{fmtMoney(l.price, { cents: true })}</div>
-          <div className="text-[11px] text-stone-500">{l.frequency !== "once" ? `per visit · ${fmtMoney(l.seasonPrice)}/season` : "one-time"}</div>
+          <div className="text-[11px] text-stone-500">{l.optional ? <span className="text-amber-300">optional · </span> : null}{l.frequency !== "once" ? `per visit · ${fmtMoney(l.seasonPrice)}/season` : "one-time"}</div>
         </div>
       </div>
       <div className="flex flex-wrap items-end gap-2">
@@ -441,13 +557,29 @@ function LineEditor({ line: l, raw, pricing, setLine, removeLine, target, histor
             <input type="number" min="1" value={raw.visitsOverride ?? ""} placeholder={String(visitsPerSeason(l.frequency, pricing))} onChange={(e) => setLine(l.key, { visitsOverride: e.target.value === "" ? null : e.target.value })} className={`${inputCls} w-20`} />
           </Field>
         )}
+        <label className="flex items-center gap-1.5 text-xs text-stone-300 pb-2 cursor-pointer" title="Prints as *Optional with signature & date lines; not included in the total">
+          <input type="checkbox" checked={!!raw.optional} onChange={(e) => setLine(l.key, { optional: e.target.checked })} className="accent-amber-500" /> Optional add-on
+        </label>
         <button onClick={() => removeLine(l.key)} className="ml-auto text-xs text-stone-500 hover:text-red-400 pb-2">Remove</button>
       </div>
       <div className="mt-2">
-        <input value={raw.detailsText ?? ""} onChange={(e) => setLine(l.key, { detailsText: e.target.value })}
-          placeholder={l.qtyText ? `Details shown to customer: ${l.qtyText}` : "Details shown to customer (optional)"}
+        <div className="text-[10px] text-stone-500 mb-1">Description printed after the name</div>
+        <textarea rows={2} value={raw.detailsText ?? ""} onChange={(e) => setLine(l.key, { detailsText: e.target.value })}
+          placeholder={l.proposalText || "Describe the work for the customer (optional)"}
           className={`${inputCls} w-full text-xs py-1.5`} />
       </div>
+      {template === "commercial" && (
+        <div className="grid md:grid-cols-2 gap-2 mt-2">
+          <div>
+            <div className="text-[10px] text-stone-500 mb-1">Scope of work — work included (one per line)</div>
+            <textarea rows={3} value={raw.workIncluded || ""} onChange={(e) => setLine(l.key, { workIncluded: e.target.value })} placeholder={"Excavate and compact base to 4\"\nInstall edge restraint\n…"} className={`${inputCls} w-full text-xs`} />
+          </div>
+          <div>
+            <div className="text-[10px] text-stone-500 mb-1">Acceptance criteria</div>
+            <textarea rows={3} value={raw.acceptance || ""} onChange={(e) => setLine(l.key, { acceptance: e.target.value })} placeholder="When this item is considered complete…" className={`${inputCls} w-full text-xs`} />
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-stone-500">
         <span>⏱ {fmtHours(l.personMin)}{l.crew > 1 ? ` (${fmtHours(l.personMin / l.crew)} on site)` : ""}</span>
         <span>Cost {fmtMoney(l.cost)}</span>
@@ -656,8 +788,112 @@ function PricingSettings({ pricing, onSave, customers, serviceVisits, history, s
         </Panel>
       </div>
 
+      <ProposalContent p={p} setP={setP} />
+      <ProposalAttachments />
+
       <LawnSizes customers={customers} onRefreshCustomers={onRefreshCustomers} />
     </div>
+  );
+}
+
+function ProposalContent({ p, setP }) {
+  const c = { ...DEFAULT_PROPOSAL_CONTENT, ...(p.proposalContent || {}) };
+  const set = (k, v) => setP((x) => ({ ...x, proposalContent: { ...(x.proposalContent || {}), [k]: v } }));
+  const f = (k, lbl, rows = 1) => (
+    <div className={rows > 1 ? "md:col-span-2" : ""}>
+      <div className="text-[10px] text-stone-500 mb-1">{lbl}</div>
+      {rows > 1
+        ? <textarea rows={rows} value={c[k]} onChange={(e) => set(k, e.target.value)} className={`${inputCls} w-full text-xs`} />
+        : <input value={c[k]} onChange={(e) => set(k, e.target.value)} className={`${inputCls} w-full py-1.5`} />}
+    </div>
+  );
+  return (
+    <Panel>
+      <details>
+        <summary className="cursor-pointer select-none font-bold">Proposal content <span className="text-xs font-normal text-stone-500">: company sections printed on every proposal (from your Drive templates)</span></summary>
+        <div className="grid md:grid-cols-2 gap-3 mt-4">
+          {f("contactName", "Contact name")}{f("contactTitle", "Contact title")}
+          {f("phone", "Phone")}{f("email", "Email")}
+          {f("companyLegal", "Legal name (Prepared by)")}{f("address", "Business address")}
+          {f("validDays", "Proposals valid for (days)")}{f("payableBy", "Payable by")}
+          {f("whoWeAre", "Who We Are (blank line between paragraphs)", 7)}
+          {f("reference1", "Reference letter 1", 6)}
+          {f("reference2", "Reference letter 2 (residential)", 6)}
+          {f("commercialReference2", "Reference letter 2 (commercial)", 4)}
+          {f("startDefault", "Default start / scheduling sentence", 2)}
+          {f("servicesExcluded", "Default services-excluded sentence", 2)}
+          {f("depositTerms", "Deposit terms", 3)}
+          {f("optionalTerms", "Optional line item authorization", 3)}
+          {f("aerationNotice", "Aeration flagging notice (added automatically when aeration is on an estimate)", 5)}
+          {f("customerServiceNote", "Customer service note (commercial)", 2)}
+        </div>
+        <button onClick={() => setP((x) => ({ ...x, proposalContent: {} }))} className="text-xs text-stone-500 hover:text-stone-300 mt-3">Reset to template wording</button>
+      </details>
+    </Panel>
+  );
+}
+
+// Certificate of Insurance / W-9 images, stored admin-only and added to proposals
+function ProposalAttachments() {
+  const [att, setAtt] = useState(null);
+  const [busy, setBusy] = useState("");
+  useEffect(() => { db.fetchAppSetting("proposal_attachments").then((v) => setAtt(v || {})); }, []);
+  const toJpeg = (file) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1700 / img.width);
+      const cv = document.createElement("canvas");
+      cv.width = Math.round(img.width * scale); cv.height = Math.round(img.height * scale);
+      const ctx = cv.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      resolve(cv.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => reject(new Error("Not an image"));
+    img.src = URL.createObjectURL(file);
+  });
+  const upload = async (key, file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { alert("Please upload an image (PNG or JPG). For a PDF, take a screenshot or export the page as an image."); return; }
+    setBusy(key);
+    try {
+      const dataUrl = await toJpeg(file);
+      const next = { ...(att || {}), [key]: dataUrl, [`${key}UpdatedAt`]: new Date().toISOString() };
+      await db.saveAppSetting("proposal_attachments", next);
+      setAtt(next);
+    } catch (e) { alert(e.message); }
+    setBusy("");
+  };
+  const remove = async (key) => {
+    const next = { ...(att || {}) }; delete next[key]; delete next[`${key}UpdatedAt`];
+    await db.saveAppSetting("proposal_attachments", next); setAtt(next);
+  };
+  const slot = (key, title, note) => (
+    <div className="border border-stone-800 rounded-xl p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div><div className="font-semibold text-sm text-stone-200">{title}</div><div className="text-[11px] text-stone-500">{note}</div></div>
+        {att?.[key] && <button onClick={() => remove(key)} className="text-xs text-stone-500 hover:text-red-400">Remove</button>}
+      </div>
+      {att?.[key]
+        ? <img src={att[key]} alt={title} className="w-full max-h-48 object-contain bg-white rounded-lg" />
+        : <div className="text-xs text-stone-500 bg-stone-950/50 rounded-lg px-3 py-6 text-center">Not uploaded yet</div>}
+      <label className={`${btnGhost} mt-2 inline-block cursor-pointer text-xs`}>
+        {busy === key ? "Uploading…" : att?.[key] ? "Replace image" : "Upload image"}
+        <input type="file" accept="image/*" className="hidden" onChange={(e) => upload(key, e.target.files?.[0])} />
+      </label>
+      {att?.[`${key}UpdatedAt`] && <span className="text-[10px] text-stone-600 ml-2">updated {new Date(att[`${key}UpdatedAt`]).toLocaleDateString()}</span>}
+    </div>
+  );
+  return (
+    <Panel>
+      <h3 className="font-bold mb-1">Proposal attachments</h3>
+      <p className="text-xs text-stone-500 mb-3">Added as the last page(s) of proposals. Stored privately; only signed-in admins can load them.</p>
+      {att === null ? <p className="text-xs text-stone-500">Loading…</p> : (
+        <div className="grid md:grid-cols-2 gap-3">
+          {slot("coi", "Certificate of Insurance", "Residential + commercial proposals. Replace when your policy renews.")}
+          {slot("w9", "Form W-9", "Commercial proposals only. Contains your tax ID — only upload if you want it attached.")}
+        </div>
+      )}
+    </Panel>
   );
 }
 
