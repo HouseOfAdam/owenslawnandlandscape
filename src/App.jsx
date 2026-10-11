@@ -1,6 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase, isOnline } from "./lib/supabase";
 import * as db from "./lib/db";
+import { buildJobCosting, monthlyFinancials, DEFAULT_COSTING_SETTINGS, yearOf } from "./lib/profitability";
+import JobProfitabilityTab from "./admin/JobProfitability";
+import DashboardAnalytics from "./admin/DashboardAnalytics";
+import { JobTagSelect, ExpenseTagCell, buildJobTagOptions, splitAmount } from "./admin/JobTags";
 
 // Google Fonts — Inter (loaded via style injection)
 const _injectFonts = (() => {
@@ -4272,7 +4276,7 @@ const AdminPortal = ({ onLogout }) => {
   const [newVisit, setNewVisit] = useState({ customer_id: "", date: new Date().toISOString().slice(0,10), service: "Mowing", amount: "", status: "completed", notes: "", duration_minutes: "" });
   const [editingVisitId, setEditingVisitId] = useState(null);
   const [editingVisitData, setEditingVisitData] = useState({});
-  const serviceTypes = ["Mowing","Leaf Removal","Landscaping","Mulching","Hedge Trimming","Snow Removal","Spring Cleanup","Fall Cleanup","Other"];
+  const serviceTypes = ["Mowing","Aeration & Overseeding","Lawn Treatment","Weeding","Landscaping","Mulching","Hedge Trimming","Tree Trimming","Leaf Removal","Spring Cleanup","Fall Cleanup","Snow Removal","Other"];
 
   const refreshServiceVisits = useCallback(async () => {
     const data = await db.fetchServiceVisits();
@@ -4286,7 +4290,8 @@ const AdminPortal = ({ onLogout }) => {
   // ── 2026 Expense Tracking State ───────────────────────────
   const [expenses, setExpenses] = useState([]);
   const [showAddExpense, setShowAddExpense] = useState(false);
-  const [newExpense, setNewExpense] = useState({ date: new Date().toISOString().slice(0,10), category: "Equipment", description: "", amount: "" });
+  const [newExpense, setNewExpense] = useState({ date: new Date().toISOString().slice(0,10), category: "Equipment", description: "", amount: "", tags: [] });
+  const [expenseFilter, setExpenseFilter] = useState("all");
   const expenseCategories = ["Equipment","Automobile Fuel","Materials","Insurance","Wages","Equipment Maintenance","Auto Maintenance","Meals","Contract Labor","Marketing","Other"];
 
   // Load expenses from Supabase on mount
@@ -4299,18 +4304,56 @@ const AdminPortal = ({ onLogout }) => {
     refreshExpenses();
   }, [refreshExpenses]);
 
+  // ── Job costing: expense↔job links + rate settings ───────
+  const [allocations, setAllocations] = useState([]);
+  const refreshAllocations = useCallback(async () => {
+    const data = await db.fetchExpenseAllocations();
+    if (data) setAllocations(data);
+  }, []);
+  useEffect(() => { refreshAllocations(); }, [refreshAllocations]);
+
+  const [costingSettings, setCostingSettings] = useState(DEFAULT_COSTING_SETTINGS);
+  useEffect(() => {
+    db.fetchAppSetting("job_costing").then(v => { if (v) setCostingSettings({ ...DEFAULT_COSTING_SETTINGS, ...v }); });
+  }, []);
+  const saveCostingSettings = useCallback(async (next) => {
+    setCostingSettings(next);
+    await db.saveAppSetting("job_costing", next);
+  }, []);
+
+  const analyticsYears = useMemo(() => {
+    const ys = new Set([new Date().getFullYear()]);
+    serviceVisits.forEach(v => v.date && ys.add(yearOf(v.date)));
+    expenses.forEach(e => e.date && ys.add(yearOf(e.date)));
+    return [...ys].filter(y => y >= 2026).sort((a, b) => b - a);
+  }, [serviceVisits, expenses]);
+  const [analyticsYear, setAnalyticsYear] = useState(new Date().getFullYear());
+  const analyticsMonthly = useMemo(() => monthlyFinancials({ visits: serviceVisits, expenses, year: analyticsYear }), [serviceVisits, expenses, analyticsYear]);
+  const jobCosting = useMemo(() => buildJobCosting({
+    visits: serviceVisits, expenses, allocations, customers, settings: costingSettings, year: analyticsYear,
+  }), [serviceVisits, expenses, allocations, customers, costingSettings, analyticsYear]);
+  // Job tags on expenses
+  const jobTagOptions = useMemo(() => buildJobTagOptions(serviceVisits, customers), [serviceVisits, customers]);
+  const untaggedExpenseIds = useMemo(() => new Set(jobCosting.unassigned.map(e => e.id)), [jobCosting]);
+  const saveExpenseTags = useCallback(async (expense, tagJobs) => {
+    const amounts = splitAmount(Number(expense.amount) || 0, tagJobs);
+    await db.setExpenseTags(expense.id, tagJobs.map((j, i) => ({ visit_id: j.id, amount: amounts[i] })));
+    if (tagJobs.length && expense.is_overhead) await db.updateExpense(expense.id, { is_overhead: false });
+    await Promise.all([refreshAllocations(), refreshExpenses()]);
+  }, [refreshAllocations, refreshExpenses]);
+  const openUntaggedExpenses = () => { setExpenseFilter("untagged"); setTab("expenses"); };
+  const [profitNav, setProfitNav] = useState({ view: "jobs", category: "", n: 0 });
+  const openProfit = (view = "jobs", category = "") => { setProfitNav(p => ({ view, category, n: p.n + 1 })); setTab("profit"); };
+
   // ── 2026 Revenue (from actual completed service visits) ───
   const completedVisits = serviceVisits.filter(v => v.status === "completed");
-  const monthlyRevenue2026 = months.map((m, i) => {
-    return completedVisits
-      .filter(v => new Date(v.date).getMonth() === i && new Date(v.date).getFullYear() === 2026)
-      .reduce((sum, v) => sum + Number(v.amount), 0);
-  });
+  // Dates are "YYYY-MM-DD" strings; monthlyFinancials parses them directly so
+  // nothing shifts a month because of the browser's time zone.
+  const monthly2026 = useMemo(() => monthlyFinancials({ visits: serviceVisits, expenses, year: 2026 }), [serviceVisits, expenses]);
+  const monthlyRevenue2026 = monthly2026.map(r => r.revenue);
   const totalRevenue2026 = monthlyRevenue2026.reduce((a,b) => a+b, 0);
-  const monthlyExpenses2026 = months.map((m, i) => {
-    return expenses.filter(e => new Date(e.date).getMonth() === i).reduce((sum, e) => sum + Number(e.amount), 0);
-  });
-  const totalExpenses2026 = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+  const monthlyExpenses2026 = monthly2026.map(r => r.expenses);
+  const totalExpenses2026 = monthlyExpenses2026.reduce((a,b) => a+b, 0);
   const netProfit2026 = totalRevenue2026 - totalExpenses2026;
   const maxVal2026 = Math.max(...monthlyRevenue2026, ...monthlyExpenses2026, 1);
 
@@ -4333,6 +4376,7 @@ const AdminPortal = ({ onLogout }) => {
 
   const tabs = [
     { id: "dashboard",  label: "Dashboard",            icon: "chart" },
+    { id: "profit",     label: "Job Profitability",    icon: "trending" },
     { id: "crm",        label: "CRM",                  icon: "users" },
     { id: "ar",          label: "Accounts Receivable",  icon: "invoice" },
     { id: "expenses",   label: "Expense Tracker",      icon: "clipboard" },
@@ -4458,37 +4502,29 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
               <div>
                 <h1 className="text-2xl font-extrabold">Business Dashboard</h1>
-                <p className="text-stone-500 text-sm">2026 Season — Year 2</p>
+                <p className="text-stone-500 text-sm">{analyticsYear} Season · revenue from completed visits, expenses from your tracker</p>
               </div>
-              <Badge color="emerald">Active Season</Badge>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6">
-              <StatCard label="Revenue" value={`$${totalRevenue2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD (actual)" icon="dollar" color="emerald" />
-              <StatCard label="Projected Season" value={`$${projectedSeasonRevenue.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub={`Apr–Nov · ${customers.filter(c => c.status === "Active" && (c.frequency === "Weekly" || c.frequency === "Biweekly")).length} recurring`} icon="trending" color="emerald" />
-              <StatCard label="Expenses" value={`$${totalExpenses2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub="2026 YTD" icon="alert" color="red" />
-              <StatCard label="Net Profit" value={`$${netProfit2026.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`} sub={totalRevenue2026 > 0 ? `${((netProfit2026/totalRevenue2026)*100).toFixed(1)}% margin` : "—"} icon="chart" color="blue" />
-              <StatCard label="Active Clients" value={`${customers.filter(c=>c.status==="Active").length}`} sub={`of ${customers.length} total`} icon="users" color="amber" />
+              <div className="flex items-center gap-2">
+                {analyticsYears.length > 1 && (
+                  <select value={analyticsYear} onChange={e => setAnalyticsYear(Number(e.target.value))}
+                    className="bg-stone-800 border border-stone-700 rounded-lg px-3 py-1.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600">
+                    {analyticsYears.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                )}
+                <Badge color="green" dark>Active Season</Badge>
+              </div>
             </div>
 
-            {/* Revenue vs Expenses Chart */}
-            <Card className="mb-5">
-              <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="chart" size={16} color="#34d399" /> 2026 Monthly Revenue vs. Expenses</h3>
-              <div className="flex items-end gap-2 h-40">
-                {months.map((m, i) => (
-                  <div key={m} className="flex-1 flex flex-col items-center gap-1">
-                    <div className="w-full flex gap-0.5 items-end" style={{ height: "120px" }}>
-                      <div className="flex-1 bg-emerald-700/70 rounded-t" style={{ height: `${maxVal2026 > 0 ? (monthlyRevenue2026[i]/maxVal2026)*120 : 0}px` }} title={`Revenue $${monthlyRevenue2026[i].toFixed(0)}`} />
-                      <div className="flex-1 bg-red-900/70 rounded-t" style={{ height: `${maxVal2026 > 0 ? (monthlyExpenses2026[i]/maxVal2026)*120 : 0}px` }} title={`Expenses $${monthlyExpenses2026[i].toFixed(0)}`} />
-                    </div>
-                    <div className="text-[10px] text-stone-600">{m}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-4 mt-2 text-xs text-stone-500">
-                <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-emerald-700/70 rounded" /> Revenue</div>
-                <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-red-900/70 rounded" /> Expenses</div>
-              </div>
-            </Card>
+            <DashboardAnalytics
+              monthly={analyticsMonthly}
+              year={analyticsYear}
+              costing={jobCosting}
+              customers={customers}
+              expenses={expenses}
+              projectedSeasonRevenue={projectedSeasonRevenue}
+              onOpenProfit={openProfit}
+              onOpenExpenses={openUntaggedExpenses}
+            />
 
             <div className="grid md:grid-cols-2 gap-5">
               <Card>
@@ -4517,6 +4553,26 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
               </Card>
             </div>
           </div>
+        )}
+
+        {/* JOB PROFITABILITY */}
+        {tab === "profit" && (
+          <JobProfitabilityTab
+            key={profitNav.n}
+            costing={jobCosting}
+            customers={customers}
+            serviceVisits={serviceVisits}
+            serviceTypes={serviceTypes}
+            year={analyticsYear}
+            initialView={profitNav.view}
+            initialCategory={profitNav.category}
+            onRefreshVisits={refreshServiceVisits}
+            onRefreshExpenses={refreshExpenses}
+            onRefreshCustomers={refreshCustomers}
+            onRefreshAllocations={refreshAllocations}
+            onSaveSettings={saveCostingSettings}
+            onOpenExpenses={openUntaggedExpenses}
+          />
         )}
 
         {/* CRM */}
@@ -5036,7 +5092,18 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
 
             {/* Expense list */}
             <Card>
-              <h3 className="font-bold mb-4">All Expenses</h3>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h3 className="font-bold">All Expenses</h3>
+                <div className="flex gap-1.5 text-xs">
+                  <button onClick={() => setExpenseFilter("all")} className={`px-3 py-1.5 rounded-lg font-semibold ${expenseFilter === "all" ? "bg-emerald-900/50 text-emerald-300 border border-emerald-700/50" : "bg-stone-800 text-stone-400 border border-stone-700"}`}>All</button>
+                  <button onClick={() => setExpenseFilter("untagged")} className={`px-3 py-1.5 rounded-lg font-semibold ${expenseFilter === "untagged" ? "bg-emerald-900/50 text-emerald-300 border border-emerald-700/50" : "bg-stone-800 text-stone-400 border border-stone-700"}`}>
+                    Needs a job tag <span className={untaggedExpenseIds.size ? "text-amber-400" : "text-stone-500"}>{untaggedExpenseIds.size}</span>
+                  </button>
+                </div>
+              </div>
+              {expenseFilter === "untagged" && (
+                <p className="text-xs text-stone-500 -mt-2 mb-3">Materials and helper pay without a job tag. Tap a suggested job (★ = name match), pick another with "Other…", or mark it as not job-specific.</p>
+              )}
               {expenses.length === 0 ? (
                 <p className="text-stone-600 text-sm py-8 text-center">No expenses logged yet. Click "Add Expense" to get started.</p>
               ) : (
@@ -5044,17 +5111,23 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-stone-800">
-                        {["Date", "Category", "Description", "Amount", ""].map(h => (
+                        {["Date", "Category", "Description", "Job tag", "Amount", ""].map(h => (
                           <th key={h} className="text-left py-2 px-3 text-stone-500 text-xs uppercase tracking-wider font-semibold">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-800/40">
-                      {[...expenses].sort((a,b) => b.date.localeCompare(a.date)).map((e) => (
+                      {[...expenses].filter(e => expenseFilter !== "untagged" || untaggedExpenseIds.has(e.id)).sort((a,b) => b.date.localeCompare(a.date)).map((e) => (
                         <tr key={e.id} className="hover:bg-stone-800/30">
                           <td className="py-2.5 px-3 text-stone-400">{e.date}</td>
                           <td className="py-2.5 px-3"><Badge color="gray">{e.category}</Badge></td>
                           <td className="py-2.5 px-3 text-stone-300">{e.description}</td>
+                          <td className="py-2.5 px-3">
+                            <ExpenseTagCell expense={e} tags={allocations.filter(x => x.expense_id === e.id)} options={jobTagOptions}
+                              onSave={saveExpenseTags}
+                              onMarkOverhead={async (ex) => { await db.setExpenseTags(ex.id, []); await db.updateExpense(ex.id, { is_overhead: true }); await Promise.all([refreshExpenses(), refreshAllocations()]); }}
+                              onClearOverhead={async (ex) => { await db.updateExpense(ex.id, { is_overhead: false }); await refreshExpenses(); }} />
+                          </td>
                           <td className="py-2.5 px-3 text-red-400 font-bold">${Number(e.amount).toLocaleString()}</td>
                           <td className="py-2.5 px-3">
                             <button onClick={async () => { await db.deleteExpense(e.id); await refreshExpenses(); }} className="text-stone-600 hover:text-red-400 text-xs transition-colors">Remove</button>
@@ -5094,6 +5167,10 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                         className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
                     </div>
                     <div>
+                      <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Job tag <span className="normal-case font-normal text-stone-600">(optional: materials or pay for specific jobs)</span></label>
+                      <JobTagSelect expense={newExpense} options={jobTagOptions} value={newExpense.tags || []} onChange={tags => setNewExpense(p => ({ ...p, tags }))} />
+                    </div>
+                    <div>
                       <label className="block text-xs text-stone-500 uppercase tracking-wider font-semibold mb-1.5">Amount ($)</label>
                       <input type="number" step="0.01" value={newExpense.amount} onChange={e => setNewExpense(p => ({...p, amount: e.target.value}))} placeholder="0.00"
                         className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm text-stone-200 focus:outline-none focus:border-emerald-600" />
@@ -5102,11 +5179,15 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
                       if (newExpense.amount && Number(newExpense.amount) > 0) {
                         const saved = await db.createExpense(newExpense);
                         if (saved) {
+                          if (newExpense.tags?.length) {
+                            const tagJobs = newExpense.tags.map(id => jobTagOptions.find(o => o.id === id)).filter(Boolean);
+                            await saveExpenseTags(saved, tagJobs);
+                          }
                           await refreshExpenses();
                         } else {
                           setExpenses(prev => [...prev, { ...newExpense, id: Date.now(), amount: Number(newExpense.amount) }]);
                         }
-                        setNewExpense({ date: new Date().toISOString().slice(0,10), category: "Equipment", description: "", amount: "" });
+                        setNewExpense({ date: new Date().toISOString().slice(0,10), category: "Equipment", description: "", amount: "", tags: [] });
                         setShowAddExpense(false);
                       }
                     }} disabled={!newExpense.amount || Number(newExpense.amount) <= 0}

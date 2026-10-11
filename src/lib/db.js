@@ -124,6 +124,7 @@ export async function convertLeadToCustomer(leadId) {
       referral_code: refCode,
       token: tokenBase,
       converted_from_lead_id: leadId,
+      source: lead.source === "referral" || lead.referral_code ? "Referral" : lead.source === "manual" ? "Manual entry" : "Website",
     }])
     .select()
     .single();
@@ -322,6 +323,8 @@ export async function createServiceVisit(visit) {
     notes: visit.notes || "",
   };
   if (visit.duration_minutes) insertData.duration_minutes = Number(visit.duration_minutes);
+  if (visit.crew_size) insertData.crew_size = Number(visit.crew_size);
+  if (visit.timer_started_at) insertData.timer_started_at = visit.timer_started_at;
   const { data, error } = await supabase
     .from("service_visits")
     .insert([insertData])
@@ -420,4 +423,90 @@ export async function getNextInvoiceNumber() {
     return `INV-${String((count || 0) + 100).padStart(4, "0")}`;
   }
   return `INV-${String(data).padStart(4, "0")}`;
+}
+
+export async function updateExpense(id, updates) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase
+    .from("expenses")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) { console.error("updateExpense:", error); return null; }
+  return data;
+}
+
+// ============================================================
+// JOB COSTING — expense ↔ job links, settings
+// ============================================================
+
+export async function fetchExpenseAllocations() {
+  if (!isOnline()) return [];
+  const { data, error } = await supabase
+    .from("expense_allocations")
+    .select("*");
+  if (error) { console.error("fetchExpenseAllocations:", error); return []; }
+  return data;
+}
+
+// Link part (or all) of an expense to a job. Re-linking the same pair updates the amount.
+export async function upsertExpenseAllocation(expenseId, visitId, amount) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase
+    .from("expense_allocations")
+    .upsert([{ expense_id: expenseId, visit_id: visitId, amount: Math.round(Number(amount) * 100) / 100 }], { onConflict: "expense_id,visit_id" })
+    .select()
+    .single();
+  if (error) { console.error("upsertExpenseAllocation:", error); return null; }
+  return data;
+}
+
+export async function deleteExpenseAllocation(id) {
+  if (!isOnline()) return null;
+  const { error } = await supabase
+    .from("expense_allocations")
+    .delete()
+    .eq("id", id);
+  if (error) { console.error("deleteExpenseAllocation:", error); return null; }
+  return true;
+}
+
+export async function fetchAppSetting(key) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+  if (error) { console.error("fetchAppSetting:", error); return null; }
+  return data?.value ?? null;
+}
+
+export async function saveAppSetting(key, value) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase
+    .from("app_settings")
+    .upsert([{ key, value, updated_at: new Date().toISOString() }], { onConflict: "key" })
+    .select()
+    .single();
+  if (error) { console.error("saveAppSetting:", error); return null; }
+  return data?.value ?? null;
+}
+
+// Replace all job tags on an expense. tags: [{ visit_id, amount }]
+export async function setExpenseTags(expenseId, tags) {
+  if (!isOnline()) return null;
+  const keep = tags.map((t) => t.visit_id);
+  let del = supabase.from("expense_allocations").delete().eq("expense_id", expenseId);
+  if (keep.length) del = del.not("visit_id", "in", `(${keep.join(",")})`);
+  const { error: delErr } = await del;
+  if (delErr) { console.error("setExpenseTags delete:", delErr); return null; }
+  if (!keep.length) return [];
+  const { data, error } = await supabase
+    .from("expense_allocations")
+    .upsert(tags.map((t) => ({ expense_id: expenseId, visit_id: t.visit_id, amount: Math.round(Number(t.amount) * 100) / 100 })), { onConflict: "expense_id,visit_id" })
+    .select();
+  if (error) { console.error("setExpenseTags upsert:", error); return null; }
+  return data;
 }
