@@ -33,11 +33,7 @@ serve(async (req) => {
     const owenEmail = Deno.env.get("OWEN_EMAIL");
     if (resendKey && owenEmail) {
       const color = approved ? "#1a4a2e" : "#92400e";
-      await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendKey}` },
-        body: JSON.stringify({
-          from: "Owen's Lawn & Landscape <owen@owenslawnandlandscapes.com>",
+      const payload = {
           to: [owenEmail],
           subject: approved
             ? `✅ Approved: ${e.customer_name} — ${e.number} (${totalText})`
@@ -59,8 +55,27 @@ serve(async (req) => {
                 <div style="margin-top:20px;"><a href="${adminUrl}" style="display:inline-block; background:${color}; color:#fff; padding:12px 24px; border-radius:12px; text-decoration:none; font-weight:bold; font-size:14px;">Open admin portal →</a></div>
               </div>
             </div>`,
-        }),
-      }).catch((err) => console.error("Email failed:", err));
+      };
+      // Send from the business domain; if Resend says the domain isn't verified yet,
+      // fall back to Resend's shared sender (delivers to the Resend account owner).
+      const send = (fromAddr: string) => fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendKey}` },
+        body: JSON.stringify({ from: fromAddr, ...payload }),
+      });
+      try {
+        let r = await send(Deno.env.get("RESEND_FROM") || "Owen's Lawn & Landscape <owen@owenslawnandlandscapes.com>");
+        let txt = await r.text();
+        if (r.status === 403 && /not verified/i.test(txt)) {
+          console.warn("Business domain not verified in Resend; retrying from onboarding@resend.dev");
+          r = await send("Owen's Lawn & Landscape <onboarding@resend.dev>");
+          txt = await r.text();
+        }
+        if (r.ok) console.log("Email sent:", r.status, txt.slice(0, 200));
+        else console.error("Email rejected by Resend:", r.status, txt.slice(0, 500));
+      } catch (err) { console.error("Email failed:", err); }
+    } else {
+      console.error("Email skipped: missing", !resendKey ? "RESEND_API_KEY" : "", !owenEmail ? "OWEN_EMAIL" : "");
     }
 
     const sid = Deno.env.get("TWILIO_ACCOUNT_SID");
@@ -75,7 +90,13 @@ serve(async (req) => {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + btoa(`${sid}:${auth}`) },
         body: new URLSearchParams({ To: owenPhone, From: from, Body: body }),
+      }).then(async (r) => {
+        const txt = await r.text();
+        if (r.ok) console.log("SMS sent:", r.status);
+        else console.error("SMS rejected by Twilio:", r.status, txt.slice(0, 500));
       }).catch((err) => console.error("SMS failed:", err));
+    } else {
+      console.error("SMS skipped: missing", [!sid && "TWILIO_ACCOUNT_SID", !auth && "TWILIO_AUTH_TOKEN", !from && "TWILIO_PHONE_FROM", !owenPhone && "OWEN_PHONE"].filter(Boolean).join(", "));
     }
 
     return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
