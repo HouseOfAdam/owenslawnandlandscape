@@ -125,6 +125,7 @@ export async function convertLeadToCustomer(leadId) {
       token: tokenBase,
       converted_from_lead_id: leadId,
       source: lead.source === "referral" || lead.referral_code ? "Referral" : lead.source === "manual" ? "Manual entry" : "Website",
+      lawn_sqft: (() => { const m = String(lead.lot_size || "").match(/\d[\d,]*/); const n = m ? parseInt(m[0].replace(/,/g, ""), 10) : 0; return n >= 500 ? n : null; })(),
     }])
     .select()
     .single();
@@ -509,4 +510,38 @@ export async function setExpenseTags(expenseId, tags) {
     .select();
   if (error) { console.error("setExpenseTags upsert:", error); return null; }
   return data;
+}
+
+// ============================================================
+// ESTIMATES v2 — rules-based estimator
+// ============================================================
+
+export async function fetchEstimates() {
+  if (!isOnline()) return [];
+  const { data, error } = await supabase
+    .from("estimates")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) { console.error("fetchEstimates:", error); return []; }
+  return data;
+}
+
+// Insert (no id) or update (with id) an estimate
+export async function saveEstimateRecord(est) {
+  if (!isOnline()) return null;
+  const { id, ...fields } = est;
+  const payload = { ...fields, updated_at: new Date().toISOString() };
+  const q = id
+    ? supabase.from("estimates").update(payload).eq("id", id)
+    : supabase.from("estimates").insert([payload]);
+  const { data, error } = await q.select().single();
+  if (error) { console.error("saveEstimateRecord:", error); return null; }
+  return data;
+}
+
+export async function deleteEstimate(id) {
+  if (!isOnline()) return null;
+  const { error } = await supabase.from("estimates").delete().eq("id", id);
+  if (error) { console.error("deleteEstimate:", error); return null; }
+  return true;
 }

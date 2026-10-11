@@ -5,7 +5,7 @@ import { buildJobCosting, monthlyFinancials, DEFAULT_COSTING_SETTINGS, yearOf } 
 import JobProfitabilityTab from "./admin/JobProfitability";
 import DashboardAnalytics from "./admin/DashboardAnalytics";
 import { JobTagSelect, ExpenseTagCell, buildJobTagOptions, splitAmount } from "./admin/JobTags";
-import { printEstimate } from "./admin/printEstimate";
+import EstimatorTab from "./admin/Estimator";
 
 // Google Fonts — Inter (loaded via style injection)
 const _injectFonts = (() => {
@@ -1803,10 +1803,11 @@ const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUST
   const handleEstimateLead = (lead) => {
     // Navigate to estimator tab with lead data pre-filled
     if (onNavigateEstimator) onNavigateEstimator({
-      customer: lead.name,
-      service: lead.service_type === "Mowing" ? "mowing" : lead.service_type?.toLowerCase() || "mowing",
-      area: lead.lot_size ? parseInt(lead.lot_size) || 5000 : 5000,
-      frequency: lead.frequency?.toLowerCase() || "weekly",
+      name: lead.name,
+      address: lead.address || "",
+      service: lead.service_type || "",
+      lotSize: lead.lot_size || "",
+      frequency: lead.frequency || "",
       notes: lead.notes || "",
       leadId: lead.id,
     });
@@ -4183,10 +4184,14 @@ const DashboardTasks = ({ customers, invoices, expenses, serviceVisits }) => {
 
 const AdminPortal = ({ onLogout }) => {
   const [tab, setTab] = useState("dashboard");
-  const [estimateForm, setEstimateForm] = useState({ customer: "", service: "mowing", area: 5000, frequency: "weekly", notes: "", leadId: null });
-  const [aiEstimate, setAiEstimate] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [savedEstimates, setSavedEstimates] = useState([]);
+  // Rules-based estimator (no AI): CRM leads can open it pre-filled
+  const [estimatorPrefill, setEstimatorPrefill] = useState({ n: 0 });
+  const [pricingSettings, setPricingSettings] = useState(null);
+  useEffect(() => { db.fetchAppSetting("pricing").then(v => { if (v) setPricingSettings(v); }); }, []);
+  const savePricingSettings = useCallback(async (next) => {
+    setPricingSettings(next);
+    await db.saveAppSetting("pricing", next);
+  }, []);
   // Invoices from Supabase
   const [invoices, setInvoices] = useState([]);
   // Load customers from Supabase (fall back to hardcoded seed data when offline)
@@ -4213,26 +4218,19 @@ const AdminPortal = ({ onLogout }) => {
   }, [refreshInvoices]);
 
   // Navigate to estimator tab pre-filled with lead data
-  const handleNavigateEstimator = useCallback(async (leadData) => {
+  const handleNavigateEstimator = useCallback((leadData) => {
     if (leadData) {
-      setEstimateForm(prev => ({
-        ...prev,
-        customer: leadData.name || leadData.customer || prev.customer,
-        service: leadData.serviceType || leadData.service_type || leadData.service || prev.service,
-        area: leadData.lotSize || leadData.lot_size || leadData.area || prev.area,
-        frequency: leadData.frequency || prev.frequency,
-        notes: leadData.notes || prev.notes,
-        leadId: leadData.leadId || null,
+      setEstimatorPrefill(p => ({
+        n: p.n + 1,
+        name: leadData.name || leadData.customer || "",
+        address: leadData.address || "",
+        service: leadData.serviceType || leadData.service_type || leadData.service || "",
+        lotSize: leadData.lotSize || leadData.lot_size || leadData.area || "",
+        frequency: leadData.frequency || "",
+        notes: leadData.notes || "",
+        leadId: leadData.leadId || leadData.id || null,
       }));
-      // Load saved estimates for this lead
-      if (leadData.leadId && isOnline()) {
-        const { data } = await supabase.from("estimates").select("*").eq("lead_id", leadData.leadId).order("created_at", { ascending: false });
-        setSavedEstimates(data || []);
-      } else {
-        setSavedEstimates([]);
-      }
     }
-    setAiEstimate(null);
     setTab("estimator");
   }, []);
 
@@ -4384,58 +4382,10 @@ const AdminPortal = ({ onLogout }) => {
     { id: "expenses",   label: "Expense Tracker",      icon: "clipboard" },
     { id: "visits",     label: "Service Visits",       icon: "check" },
     { id: "schedule",   label: "Schedule & Routes",    icon: "map" },
-    { id: "estimator",  label: "AI Estimator",         icon: "sparkle" },
+    { id: "estimator",  label: "Estimator",            icon: "sparkle" },
     { id: "materials",  label: "Materials & Equipment",icon: "package" },
     { id: "prior",      label: "Prior Seasons",        icon: "calendar" },
   ];
-
-  const generateEstimate = async () => {
-    setAiLoading(true);
-    setAiEstimate(null);
-    try {
-      const prompt = `You are an expert lawn care pricing assistant for Owen's Lawn + Landscape in Bargersville, IN. 
-Generate a detailed, professional estimate for:
-- Service: ${estimateForm.service}
-- Property Size: ${estimateForm.area} sq ft
-- Frequency: ${estimateForm.frequency}
-- Notes: ${estimateForm.notes || "Standard property"}
-
-Provide a JSON response with these exact fields:
-{
-  "basePrice": number (per visit price),
-  "monthlyEstimate": number,
-  "annualEstimate": number,
-  "lineItems": [{"description": string, "amount": number}],
-  "recommendation": string (1-2 sentences of advice),
-  "profitMargin": string (e.g., "68%"),
-  "competitiveNote": string (brief market positioning note)
-}
-
-Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, large (10000-20000) $55-85, very large $85-150. Landscaping projects range $300-3000+. Always return valid JSON only.`;
-
-      const response = await fetch(import.meta.env.VITE_ANTHROPIC_API_URL || "https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(import.meta.env.VITE_ANTHROPIC_API_KEY ? { "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" } : {})
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      const data = await response.json();
-      const text = data.content?.find(b => b.type === "text")?.text || "{}";
-      const clean = text.replace(/```json|```/g, "").trim();
-      setAiEstimate(JSON.parse(clean));
-    } catch (e) {
-      setAiEstimate({ error: true, basePrice: 35, monthlyEstimate: 140, annualEstimate: 1680,
-        lineItems: [{ description: "Weekly Mowing", amount: 35 }, { description: "Edge & Blow", amount: 0 }],
-        recommendation: "Great candidate for annual plan — lock in savings.", profitMargin: "65%", competitiveNote: "Competitively priced for the area." });
-    }
-    setAiLoading(false);
-  };
 
   const equipment = [
     { name: "Lawn Mower (Primary)", purchase: 694.43, purchaseDate: "Apr 2025", category: "Equipment", depreciation: "5yr", monthlyDep: 11.57 },
@@ -4816,194 +4766,15 @@ Base pricing on: small lots (<5000 sqft) $25-35, medium (5000-10000) $35-55, lar
 
         {/* AI ESTIMATOR */}
         {tab === "estimator" && (
-          <div>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-emerald-900/40 rounded-xl flex items-center justify-center">
-                <Icon name="sparkle" size={20} color="#34d399" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-extrabold">AI-Powered Estimator</h1>
-                <p className="text-stone-500 text-sm">Get intelligent, profitable estimates in seconds</p>
-              </div>
-            </div>
-            <div className="grid md:grid-cols-2 gap-6">
-              <Card>
-                <h3 className="font-bold mb-4">Project Details</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1.5">Customer Name</label>
-                    <input value={estimateForm.customer} onChange={e => setEstimateForm({...estimateForm, customer: e.target.value})}
-                      placeholder="e.g., John Smith" className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1.5">Service Type</label>
-                    <select value={estimateForm.service} onChange={e => setEstimateForm({...estimateForm, service: e.target.value})}
-                      className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                      <option value="mowing">Lawn Mowing</option>
-                      <option value="landscaping">Landscaping Installation</option>
-                      <option value="treatment">Lawn Treatment / Pre-Emergent</option>
-                      <option value="aeration">Aeration & Seeding</option>
-                      <option value="mulch">Mulch Application</option>
-                      <option value="brush">Brush Clearing</option>
-                      <option value="annual">Annual Service Plan</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1.5">Property Size (sq ft)</label>
-                    <input type="number" value={estimateForm.area} onChange={e => setEstimateForm({...estimateForm, area: parseInt(e.target.value)})}
-                      className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1.5">Service Frequency</label>
-                    <select value={estimateForm.frequency} onChange={e => setEstimateForm({...estimateForm, frequency: e.target.value})}
-                      className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                      <option value="weekly">Weekly</option>
-                      <option value="biweekly">Bi-Weekly</option>
-                      <option value="monthly">Monthly</option>
-                      <option value="one-time">One-Time</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1.5">Special Notes</label>
-                    <textarea value={estimateForm.notes} onChange={e => setEstimateForm({...estimateForm, notes: e.target.value})} rows={2}
-                      placeholder="Slope, obstacles, special requirements..." className="w-full bg-stone-800 border border-stone-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600 resize-none" />
-                  </div>
-                  <button onClick={generateEstimate} disabled={aiLoading}
-                    className="w-full bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all">
-                    {aiLoading ? <>Generating<span className="animate-pulse">...</span></> : <><Icon name="sparkle" size={16} color="white" /> Generate AI Estimate</>}
-                  </button>
-                </div>
-              </Card>
-
-              <div>
-                {aiLoading && (
-                  <Card className="h-full flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-12 h-12 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                      <p className="text-stone-400">Analyzing property and market data...</p>
-                    </div>
-                  </Card>
-                )}
-                {aiEstimate && !aiLoading && (
-                  <div className="space-y-4">
-                    <Card className="bg-emerald-950/30 border-emerald-900/50">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-bold text-emerald-300">AI Estimate Generated</h3>
-                        <Badge color="green">Profit: {aiEstimate.profitMargin}</Badge>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                        <div className="text-center bg-stone-900/50 rounded-xl p-3">
-                          <div className="text-2xl font-extrabold text-emerald-400">${aiEstimate.basePrice}</div>
-                          <div className="text-xs text-stone-500">Per Visit</div>
-                        </div>
-                        <div className="text-center bg-stone-900/50 rounded-xl p-3">
-                          <div className="text-2xl font-extrabold text-emerald-400">${aiEstimate.monthlyEstimate}</div>
-                          <div className="text-xs text-stone-500">Monthly</div>
-                        </div>
-                        <div className="text-center bg-stone-900/50 rounded-xl p-3">
-                          <div className="text-2xl font-extrabold text-emerald-400">${aiEstimate.annualEstimate?.toLocaleString()}</div>
-                          <div className="text-xs text-stone-500">Annual</div>
-                        </div>
-                      </div>
-                      <div className="space-y-1.5 mb-4">
-                        {aiEstimate.lineItems?.map((item, i) => (
-                          <div key={i} className="flex justify-between text-sm bg-stone-900/50 rounded-lg px-3 py-2">
-                            <span className="text-stone-300">{item.description}</span>
-                            <span className="text-emerald-400 font-semibold">{item.amount > 0 ? `$${item.amount}` : "Included"}</span>
-                          </div>
-                        ))}
-                      </div>
-                      {aiEstimate.recommendation && (
-                        <div className="bg-amber-900/20 border border-amber-800/40 rounded-xl p-3 text-sm text-amber-300">
-                          💡 {aiEstimate.recommendation}
-                        </div>
-                      )}
-                    </Card>
-                    <Card>
-                      <p className="text-xs text-stone-500 italic">{aiEstimate.competitiveNote}</p>
-                      <button onClick={() => printEstimate({
-                        customer: estimateForm.customer, service: estimateForm.service, frequency: estimateForm.frequency, area: estimateForm.area,
-                        basePrice: aiEstimate.basePrice, monthlyEstimate: aiEstimate.monthlyEstimate, annualEstimate: aiEstimate.annualEstimate, lineItems: aiEstimate.lineItems,
-                      })} className="mt-3 w-full bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 py-2.5 rounded-xl text-sm font-bold transition-all">
-                        Print / PDF estimate for customer
-                      </button>
-                      {estimateForm.leadId && (
-                        <button onClick={async () => {
-                          const saved = await db.saveEstimate(estimateForm.leadId, aiEstimate);
-                          if (saved) {
-                            setSavedEstimates(prev => [saved, ...prev]);
-                            setAiEstimate(null);
-                          }
-                        }} className="mt-3 w-full bg-emerald-700 hover:bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-bold transition-all">
-                          Save Estimate to Lead →
-                        </button>
-                      )}
-                      {!estimateForm.leadId && (
-                        <p className="mt-3 text-xs text-stone-600 text-center">Navigate here from a lead in the CRM to save estimates to their record.</p>
-                      )}
-                    </Card>
-                  </div>
-                )}
-                {!aiEstimate && !aiLoading && (
-                  <Card className="h-64 flex items-center justify-center border-dashed">
-                    <div className="text-center text-stone-600">
-                      <Icon name="sparkle" size={32} color="#374151" />
-                      <p className="mt-2 text-sm">Fill in the form and generate<br />your AI-powered estimate</p>
-                    </div>
-                  </Card>
-                )}
-
-                {/* Saved Estimate History */}
-                {savedEstimates.length > 0 && (
-                  <Card className="mt-4">
-                    <h3 className="font-bold mb-3 flex items-center gap-2"><Icon name="clipboard" size={15} color="#34d399" /> Estimate History ({savedEstimates.length})</h3>
-                    <div className="space-y-3">
-                      {savedEstimates.map((est, i) => (
-                        <div key={est.id || i} className="bg-stone-800/50 rounded-xl p-3 border border-stone-700/50">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs text-stone-500">{new Date(est.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</span>
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => printEstimate({
-                                customer: estimateForm.customer, service: estimateForm.service, frequency: estimateForm.frequency, area: estimateForm.area,
-                                basePrice: est.base_price, monthlyEstimate: est.monthly_estimate, annualEstimate: est.annual_estimate, lineItems: est.line_items || [],
-                                date: est.created_at, estimateNumber: est.id ? `EST-${String(est.id).padStart(4, "0")}` : undefined,
-                              })} className="text-xs text-emerald-500 hover:text-emerald-400">Print / PDF</button>
-                              <Badge color="green">Margin: {est.profit_margin}</Badge>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2 mb-2">
-                            <div className="text-center">
-                              <div className="text-lg font-bold text-emerald-400">${est.base_price}</div>
-                              <div className="text-[10px] text-stone-500">Per Visit</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-lg font-bold text-emerald-400">${est.monthly_estimate}</div>
-                              <div className="text-[10px] text-stone-500">Monthly</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-lg font-bold text-emerald-400">${est.annual_estimate?.toLocaleString()}</div>
-                              <div className="text-[10px] text-stone-500">Annual</div>
-                            </div>
-                          </div>
-                          {est.line_items && est.line_items.length > 0 && (
-                            <div className="space-y-1 mb-2">
-                              {est.line_items.map((item, j) => (
-                                <div key={j} className="flex justify-between text-xs bg-stone-900/50 rounded-lg px-2 py-1">
-                                  <span className="text-stone-400">{item.description}</span>
-                                  <span className="text-emerald-400">{item.amount > 0 ? `$${item.amount}` : "Included"}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {est.recommendation && <p className="text-xs text-amber-300 bg-amber-900/20 rounded-lg px-2 py-1">💡 {est.recommendation}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
-              </div>
-            </div>
-          </div>
+          <EstimatorTab
+            pricing={pricingSettings}
+            onSavePricing={savePricingSettings}
+            costing={jobCosting}
+            customers={customers}
+            serviceVisits={serviceVisits}
+            prefill={estimatorPrefill}
+            onRefreshCustomers={refreshCustomers}
+          />
         )}
 
         {/* MATERIALS & EQUIPMENT */}
