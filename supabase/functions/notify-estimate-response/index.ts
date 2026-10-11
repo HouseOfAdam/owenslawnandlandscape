@@ -1,5 +1,5 @@
 // supabase/functions/notify-estimate-response/index.ts
-// Emails (Resend) + texts (Twilio) Owen when a customer approves or
+// Emails (Resend) Owen when a customer approves or
 // requests changes on an online proposal. Called only by the database
 // trigger notify_estimate_response() using the service-role key.
 
@@ -78,26 +78,7 @@ serve(async (req) => {
       console.error("Email skipped: missing", !resendKey ? "RESEND_API_KEY" : "", !owenEmail ? "OWEN_EMAIL" : "");
     }
 
-    const sid = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const auth = Deno.env.get("TWILIO_AUTH_TOKEN");
-    const from = Deno.env.get("TWILIO_PHONE_FROM");
-    const owenPhone = Deno.env.get("OWEN_PHONE");
-    if (sid && auth && from && owenPhone) {
-      const body = approved
-        ? `✅ ${e.customer_name} approved ${e.number} online: ${totalText}${e.optional_selected ? `\nAdded: ${e.optional_selected}` : ""}\n${adminUrl}`
-        : `✏️ ${e.customer_name} requested changes on ${e.number}${e.customer_note ? `: "${String(e.customer_note).slice(0, 200)}"` : ""}\n${adminUrl}`;
-      await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + btoa(`${sid}:${auth}`) },
-        body: new URLSearchParams({ To: owenPhone, From: from, Body: body }),
-      }).then(async (r) => {
-        const txt = await r.text();
-        if (r.ok) console.log("SMS sent:", r.status);
-        else console.error("SMS rejected by Twilio:", r.status, txt.slice(0, 500));
-      }).catch((err) => console.error("SMS failed:", err));
-    } else {
-      console.error("SMS skipped: missing", [!sid && "TWILIO_ACCOUNT_SID", !auth && "TWILIO_AUTH_TOKEN", !from && "TWILIO_PHONE_FROM", !owenPhone && "OWEN_PHONE"].filter(Boolean).join(", "));
-    }
+    // Text alerts are turned off (Twilio removed). Email only.
 
     return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
   } catch (err) {

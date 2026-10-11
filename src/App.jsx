@@ -682,7 +682,7 @@ const LoginPage = ({ onLogin, onBack }) => {
 const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUSTOMERS, onRefreshCustomers, onNavigateEstimator }) => {
   const [crmView, setCrmView] = useState("customers"); // customers | leads | lead-detail | messages | changes
   const [selectedCustomers, setSelectedCustomers] = useState(customers.map(c => c.id));
-  const [sendMode, setSendMode] = useState("both"); // email | text | both
+  const sendMode = "email"; // texting is turned off
   const [sentStatus, setSentStatus] = useState(null); // null | "sending" | "sent"
   const [msgPreviewType, setMsgPreviewType] = useState("email");
   const [changeRequests, setChangeRequests] = useState(scheduleChangeRequests);
@@ -1550,13 +1550,13 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
         <span className="text-stone-700">/</span>
         <h1 className="text-2xl font-extrabold">Customer Message Center</h1>
       </div>
-      <p className="text-stone-500 text-sm mb-5">Choose a template, customize if needed, and send via email, text, or both.</p>
+      <p className="text-stone-500 text-sm mb-5">Choose a template, customize if needed, and send by email.</p>
 
       {sentStatus === "sent" ? (
         <Card className="text-center py-14 bg-emerald-950/30 border-emerald-900/50">
           <div className="w-16 h-16 bg-emerald-900/50 rounded-full flex items-center justify-center mx-auto mb-4"><Icon name="check" size={32} color="#34d399" /></div>
           <h3 className="text-xl font-black text-emerald-300 mb-2">Messages Sent!</h3>
-          <p className="text-stone-400 text-sm mb-1">{selectedCustomers.length} customer{selectedCustomers.length !== 1 ? "s" : ""} reached via {sendMode === "both" ? "email and text" : sendMode}</p>
+          <p className="text-stone-400 text-sm mb-1">{selectedCustomers.length} customer{selectedCustomers.length !== 1 ? "s" : ""} reached by email</p>
           <p className="text-stone-500 text-xs">Template: {MESSAGE_TEMPLATES.find(t => t.id === activeTemplate)?.label}</p>
           <p className="text-stone-600 text-xs mt-1">{new Date().toLocaleDateString("en-US", {weekday:"long", year:"numeric", month:"long", day:"numeric"})}</p>
           <button onClick={() => { setSentStatus(null); setEditedEmail(null); setEditedText(null); }} className="mt-6 border border-stone-700 hover:border-stone-500 text-stone-400 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all">
@@ -1631,15 +1631,8 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
 
               <Card>
                 <h3 className="font-bold mb-4 flex items-center gap-2"><Icon name="mail" size={15} color="#34d399" /> Send Via</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {[["email","Email"],["text","Text"],["both","Both"]].map(([val, label]) => (
-                    <button key={val} onClick={() => setSendMode(val)}
-                      className={`py-2.5 rounded-xl text-sm font-semibold border transition-all ${sendMode===val ? "bg-emerald-900/40 border-emerald-600 text-emerald-300" : "bg-stone-800 border-stone-700 text-stone-400 hover:border-stone-600"}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-stone-600 mt-3">⚠ Customers without email will receive text only. {customers.filter(c=>!c.email).length} missing email.</p>
+                <p className="text-sm text-stone-300">Email</p>
+                <p className="text-xs text-stone-600 mt-2">Texting is turned off. {customers.filter(c=>!c.email).length} customer{customers.filter(c=>!c.email).length!==1?"s have":" has"} no email on file and will be skipped.</p>
               </Card>
 
               <button onClick={handleSend} disabled={selectedCustomers.length === 0 || sentStatus === "sending"}

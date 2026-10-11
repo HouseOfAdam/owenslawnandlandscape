@@ -1,5 +1,5 @@
 // supabase/functions/notify-new-lead/index.ts
-// Sends email (via Resend) + SMS (via Twilio) when a new lead comes in.
+// Sends email (via Resend) when a new lead comes in.
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
@@ -77,34 +77,7 @@ serve(async (req) => {
       }
     }
 
-    // ── Send SMS via Twilio ──────────────────────────────────
-    const twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const twilioAuth = Deno.env.get("TWILIO_AUTH_TOKEN");
-    const twilioFrom = Deno.env.get("TWILIO_PHONE_FROM");
-    const owenPhone = Deno.env.get("OWEN_PHONE");
-
-    if (twilioSid && twilioAuth && twilioFrom && owenPhone) {
-      try {
-        const smsPrefix = isReferral ? `🤝 REFERRAL` : `🌿 New Lead`;
-        const smsBody = `${smsPrefix}!\n${lead.name}\n${lead.service_type || "Estimate"}\n📍 ${lead.address || 'N/A'}\n📞 ${lead.phone || 'N/A'}${isReferral && lead.referral_code ? `\nRef Code: ${lead.referral_code}` : ''}\n\nOpen CRM: ${adminUrl}`;
-
-        await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": "Basic " + btoa(`${twilioSid}:${twilioAuth}`),
-          },
-          body: new URLSearchParams({
-            To: owenPhone,
-            From: twilioFrom,
-            Body: smsBody,
-          }),
-        });
-        console.log("SMS notification sent to", owenPhone);
-      } catch (smsErr) {
-        console.error("SMS send failed:", smsErr);
-      }
-    }
+    // Text alerts are turned off (Twilio removed). Email only.
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
