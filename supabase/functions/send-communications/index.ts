@@ -14,6 +14,7 @@
 // ============================================================
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,6 +24,20 @@ const corsHeaders = {
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // ── Only signed-in Owen's Lawn admins may send messages ──
+  const authHeader = req.headers.get("Authorization") || "";
+  const userClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: userData } = await userClient.auth.getUser();
+  const { data: isAdmin } = userData?.user ? await userClient.rpc("is_admin") : { data: false };
+  if (!userData?.user || isAdmin !== true) {
+    return new Response(JSON.stringify({ error: "Not authorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
