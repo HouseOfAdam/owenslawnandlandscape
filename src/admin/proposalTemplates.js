@@ -100,6 +100,13 @@ const baseCss = (green = "#1b4d3e") => `
   @media print { .bar { display: none; } .sheet { padding: 0; } }
 `;
 
+// Attachment pages (multi-page PDFs were rendered to one image per page on upload)
+function attachPages(att, key, title) {
+  if (!att) return "";
+  const pages = Array.isArray(att[`${key}Pages`]) && att[`${key}Pages`].length ? att[`${key}Pages`] : att[key] ? [att[key]] : [];
+  return pages.map((src, i) => `<div class="pb"></div>${i === 0 ? `<h2>${title}</h2>` : ""}<div class="attach"><img src="${src}" /></div>`).join("");
+}
+
 function openPrint(title, css, body) {
   const w = window.open("", "_blank", "width=900,height=1100");
   if (!w) { alert("Please allow pop-ups to open the proposal."); return; }
@@ -181,7 +188,7 @@ export function printResidentialProposal(d) {
     <div class="accept-line"><span>Signature:</span><span class="fill"></span><span>Date:</span><span class="fill" style="flex:0 0 1.2in"></span></div>
     <div class="accept-line"><span>Print Name:</span><span class="fill"></span><span style="flex:0 0 1.6in"></span></div>
     <div class="accept-line"><span>Company Representative Signature:</span><span class="fill"></span></div>
-    ${d.attachments?.coi ? `<div class="pb"></div><h2>Certificate of Insurance</h2><div class="attach"><img src="${d.attachments.coi}" /></div>` : ""}
+    ${attachPages(d.attachments, "coi", "Certificate of Insurance")}
   </div></td></tr></tbody></table></div>`;
   openPrint(`${d.projectTitle || "Proposal"} — ${d.customer || ""}`, baseCss(), body);
 }
@@ -324,8 +331,8 @@ export function printCommercialProposal(d) {
     <p class="kicker" style="margin-top:14pt">${esc(c.companyName)}</p>
     <div class="accept-line"><span>Company Representative Signature:</span><span class="fill"></span></div>
     <div class="accept-line"><span>${esc(c.contactName)}, ${esc(c.contactTitle)} · Date:</span><span class="fill"></span></div>
-    ${d.attachments?.coi ? `<div class="pb"></div><h2>Certificate of Insurance</h2><div class="attach"><img src="${d.attachments.coi}" /></div>` : ""}
-    ${d.attachments?.w9 ? `<div class="pb"></div><h2>Form W-9</h2><div class="attach"><img src="${d.attachments.w9}" /></div>` : ""}
+    ${attachPages(d.attachments, "coi", "Certificate of Insurance")}
+    ${attachPages(d.attachments, "w9", "Form W-9")}
   </div></td></tr></tbody></table></div>`;
   openPrint(`${d.projectTitle || "Commercial Proposal"} — ${d.customer || ""}`, baseCss(), body);
 }

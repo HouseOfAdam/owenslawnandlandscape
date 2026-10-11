@@ -851,20 +851,39 @@ function ProposalAttachments() {
     img.onerror = () => reject(new Error("Not an image"));
     img.src = URL.createObjectURL(file);
   });
+  // PDFs are rendered to images in the browser (pdf.js is loaded only when needed)
+  const pdfToJpegs = async (file) => {
+    const pdfjs = await import("pdfjs-dist");
+    const workerUrl = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+    const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pages = [];
+    for (let i = 1; i <= Math.min(doc.numPages, 4); i++) {
+      const page = await doc.getPage(i);
+      const vp = page.getViewport({ scale: 1700 / page.getViewport({ scale: 1 }).width });
+      const cv = document.createElement("canvas");
+      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      const ctx = cv.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      pages.push(cv.toDataURL("image/jpeg", 0.85));
+    }
+    return pages;
+  };
   const upload = async (key, file) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) { alert("Please upload an image (PNG or JPG). For a PDF, take a screenshot or export the page as an image."); return; }
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    if (!isPdf && !file.type.startsWith("image/")) { alert("Please upload a PDF or an image (PNG/JPG)."); return; }
     setBusy(key);
     try {
-      const dataUrl = await toJpeg(file);
-      const next = { ...(att || {}), [key]: dataUrl, [`${key}UpdatedAt`]: new Date().toISOString() };
+      const pages = isPdf ? await pdfToJpegs(file) : [await toJpeg(file)];
+      const next = { ...(att || {}), [key]: pages[0], [`${key}Pages`]: pages, [`${key}UpdatedAt`]: new Date().toISOString(), [`${key}FileName`]: file.name };
       await db.saveAppSetting("proposal_attachments", next);
       setAtt(next);
     } catch (e) { alert(e.message); }
     setBusy("");
   };
   const remove = async (key) => {
-    const next = { ...(att || {}) }; delete next[key]; delete next[`${key}UpdatedAt`];
+    const next = { ...(att || {}) }; for (const k of [key, `${key}Pages`, `${key}UpdatedAt`, `${key}FileName`]) delete next[k];
     await db.saveAppSetting("proposal_attachments", next); setAtt(next);
   };
   const slot = (key, title, note) => (
@@ -877,10 +896,10 @@ function ProposalAttachments() {
         ? <img src={att[key]} alt={title} className="w-full max-h-48 object-contain bg-white rounded-lg" />
         : <div className="text-xs text-stone-500 bg-stone-950/50 rounded-lg px-3 py-6 text-center">Not uploaded yet</div>}
       <label className={`${btnGhost} mt-2 inline-block cursor-pointer text-xs`}>
-        {busy === key ? "Uploading…" : att?.[key] ? "Replace image" : "Upload image"}
-        <input type="file" accept="image/*" className="hidden" onChange={(e) => upload(key, e.target.files?.[0])} />
+        {busy === key ? "Uploading…" : att?.[key] ? "Replace (PDF or image)" : "Upload PDF or image"}
+        <input type="file" accept="application/pdf,image/*" className="hidden" onChange={(e) => { upload(key, e.target.files?.[0]); e.target.value = ""; }} />
       </label>
-      {att?.[`${key}UpdatedAt`] && <span className="text-[10px] text-stone-600 ml-2">updated {new Date(att[`${key}UpdatedAt`]).toLocaleDateString()}</span>}
+      {att?.[`${key}UpdatedAt`] && <span className="text-[10px] text-stone-600 ml-2">{att[`${key}FileName`] ? `${att[`${key}FileName`]} · ` : ""}{(att[`${key}Pages`] || []).length > 1 ? `${att[`${key}Pages`].length} pages · ` : ""}updated {new Date(att[`${key}UpdatedAt`]).toLocaleDateString()}</span>}
     </div>
   );
   return (
