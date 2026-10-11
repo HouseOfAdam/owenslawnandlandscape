@@ -1,0 +1,2 @@
+-- Applied 2026-10-11 via Supabase MCP. Admin allowlist + token-checked customer portal lookups.
+-- See git history / Supabase migration "security_admin_allowlist_and_portal_rpcs" for full SQL.

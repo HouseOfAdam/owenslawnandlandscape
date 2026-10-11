@@ -1117,17 +1117,14 @@ const CustomerPortal = ({ onLogout, customer }) => {
 
   useEffect(() => {
     const loadInvoices = async () => {
-      if (!isOnline() || !customer?.id) { setInvoicesLoading(false); return; }
-      const { data, error } = await supabase
-        .from("invoices")
-        .select("*")
-        .eq("customer_id", customer.id)
-        .order("date_issued", { ascending: false });
+      if (!isOnline() || !customer?.token) { setInvoicesLoading(false); return; }
+      // Token-checked lookup: a customer can only ever load their own invoices
+      const { data, error } = await supabase.rpc("portal_invoices", { p_token: customer.token || "" });
       if (!error && data) setCustomerInvoices(data);
       setInvoicesLoading(false);
     };
     loadInvoices();
-  }, [customer?.id]);
+  }, [customer?.token]);
 
   const VENMO_HANDLE = "owenlawnlandscape";
 
@@ -5351,13 +5348,9 @@ const SendMeLinkModal = ({ onClose }) => {
     // Look up by email or phone via Supabase (falls back to hardcoded list when offline)
     let match = null;
     if (isOnline()) {
-      const normalized = input.trim();
-      const isEmail = normalized.includes("@");
-      const query = isEmail
-        ? supabase.from("customers").select("*").ilike("email", normalized).limit(1).single()
-        : supabase.from("customers").select("*").eq("phone", normalized.replace(/\D/g, "")).limit(1).single();
-      const { data } = await query;
-      match = data;
+      // Yes/no check only; customer records are never sent to the browser here
+      const { data } = await supabase.rpc("portal_contact_exists", { p_contact: input.trim() });
+      match = data === true;
     } else {
       match = CUSTOMERS.find(c =>
         c.email.toLowerCase() === input.toLowerCase() ||
@@ -5774,8 +5767,8 @@ export default function App() {
     // Look up customer by token in Supabase (fall back to hardcoded data when offline)
     let customer = null;
     if (isOnline()) {
-      const { data } = await supabase.from("customers").select("*").eq("token", token).limit(1).single();
-      customer = data;
+      const { data } = await supabase.rpc("portal_customer", { p_token: token });
+      customer = data || null;
     } else {
       const customerId = MAGIC_TOKENS[token];
       if (customerId) customer = CUSTOMERS.find(c => c.id === customerId);
