@@ -545,3 +545,37 @@ export async function deleteEstimate(id) {
   if (error) { console.error("deleteEstimate:", error); return null; }
   return true;
 }
+
+// ============================================================
+// ONLINE PROPOSALS — public magic links (no login)
+// ============================================================
+
+export async function publicGetProposal(token, preview = false) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase.rpc("proposal_get", { p_token: token, p_preview: !!preview });
+  if (error) { console.error("publicGetProposal:", error); return null; }
+  return data;
+}
+
+export async function publicRespondProposal(token, action, selected, name, note) {
+  if (!isOnline()) return null;
+  const { data, error } = await supabase.rpc("proposal_respond", {
+    p_token: token, p_action: action, p_selected: selected || [], p_name: name || "", p_note: note || "",
+  });
+  if (error) { console.error("publicRespondProposal:", error); return { ok: false, error: "server" }; }
+  return data;
+}
+
+// Recent customer responses for the admin notification banner
+export async function fetchEstimateResponses(sinceIso) {
+  if (!isOnline()) return [];
+  let q = supabase.from("estimates")
+    .select("id, customer_name, status, decided_at, approval_total, approval_recurring, approved_name, customer_note")
+    .eq("responded_online", true)
+    .order("decided_at", { ascending: false })
+    .limit(20);
+  if (sinceIso) q = q.gt("decided_at", sinceIso);
+  const { data, error } = await q;
+  if (error) { console.error("fetchEstimateResponses:", error); return []; }
+  return data;
+}

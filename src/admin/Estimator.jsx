@@ -7,11 +7,11 @@ import {
 import { SERVICE_CATEGORIES, rollupBy, fmtMoney, fmtPct, fmtHours, marginTone } from "../lib/profitability";
 import { printEstimateV2, printEstimate } from "./printEstimate";
 import { printResidentialProposal, printCommercialProposal, DEFAULT_PROPOSAL_CONTENT } from "./proposalTemplates";
-import { Pill, Panel, Tile, inputCls, btn, btnPrimary, btnGhost } from "./ui";
+import { Pill, Panel, Tile, Modal, inputCls, btn, btnPrimary, btnGhost } from "./ui";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const estNo = (id) => (id ? `EST-${String(id).padStart(4, "0")}` : "Draft");
-const STATUS_TONE = { draft: "gray", sent: "blue", accepted: "green", declined: "red" };
+const STATUS_TONE = { draft: "gray", sent: "blue", approved: "green", declined: "red" };
 const label = "block text-[11px] text-stone-500 uppercase tracking-wider font-semibold mb-1";
 
 function guessServiceId(text = "", services) {
@@ -36,7 +36,11 @@ const blankEstimate = () => ({
   // Proposal template fields (blank = use the smart default shown as placeholder)
   template: "residential", projectTitle: "", pricingIntro: "", startText: "", timeOnSite: "", warranty: "", exclusions: "", notices: null,
   commercial: {},
+  publicToken: null, sentAt: null, response: null,
 });
+
+const newToken = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, "0")).join("");
+export const proposalUrl = (token) => `${window.location.origin}/proposal/${token}`;
 
 const PROPOSAL_FIELDS = ["template", "projectTitle", "pricingIntro", "startText", "timeOnSite", "warranty", "exclusions", "notices", "commercial"];
 const seasonWord = (d = new Date()) => { const m = d.getMonth(); return m >= 2 && m <= 4 ? "Spring" : m >= 5 && m <= 7 ? "Summer" : m >= 8 && m <= 10 ? "Fall" : "Winter"; };
@@ -65,7 +69,7 @@ export function proposalDefaults(result, content) {
 }
 
 // ============================================================
-export default function EstimatorTab({ pricing: savedPricing, onSavePricing, costing, customers, serviceVisits, prefill, onRefreshCustomers }) {
+export default function EstimatorTab({ pricing: savedPricing, onSavePricing, costing, customers, serviceVisits, prefill, onRefreshCustomers, openSavedNav }) {
   const pricing = useMemo(() => mergePricing(savedPricing), [savedPricing]);
   const [view, setView] = useState("new");
   const [estimates, setEstimates] = useState([]);
@@ -74,6 +78,7 @@ export default function EstimatorTab({ pricing: savedPricing, onSavePricing, cos
 
   const refreshEstimates = async () => setEstimates(await db.fetchEstimates());
   useEffect(() => { refreshEstimates(); }, []);
+  useEffect(() => { if (openSavedNav) { setView("saved"); refreshEstimates(); } }, [openSavedNav]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefill from a CRM lead
   useEffect(() => {
@@ -105,6 +110,8 @@ export default function EstimatorTab({ pricing: savedPricing, onSavePricing, cos
       property: { lawnSqft: "", bedSqft: "", mulchDepthIn: "", modifiers: [], ...(inp.property || {}) },
       lines: inp.lines.map((l) => ({ ...l, key: l.key || uid() })), notes: inp.notes || "", internalNotes: inp.internalNotes || "", terms: inp.terms ?? null,
       ...Object.fromEntries(PROPOSAL_FIELDS.filter((k) => inp.proposal?.[k] !== undefined).map((k) => [k, inp.proposal[k]])),
+      publicToken: e.public_token || null, sentAt: e.sent_at || null,
+      response: { approvedName: e.approved_name, approvedAt: e.approved_at, decidedAt: e.decided_at, selection: e.selection || [], total: e.approval_total, recurring: e.approval_recurring, note: e.customer_note, online: e.responded_online, viewedAt: e.viewed_at, views: e.view_count },
     });
     setView("new");
   };
@@ -127,7 +134,7 @@ export default function EstimatorTab({ pricing: savedPricing, onSavePricing, cos
       {view === "new" && (
         <Builder est={est} setEst={setEst} pricing={pricing} costingInputs={costingInputs} costing={costing} customers={customers}
           history={history} stats={stats}
-          onSaved={async (saved, text) => { await refreshEstimates(); setEst((e) => ({ ...e, id: saved.id, status: saved.status })); flash(text); }}
+          onSaved={async (saved, text) => { await refreshEstimates(); setEst((e) => ({ ...e, id: saved.id, status: saved.status, publicToken: saved.public_token || e.publicToken, sentAt: saved.sent_at || e.sentAt })); if (text) flash(text); }}
           onNew={() => setEst(blankEstimate())} />
       )}
       {view === "saved" && (
@@ -171,7 +178,8 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
     setEst((e) => ({ ...e, customerId: c.id, customerName: c.name, address: c.address || e.address, property: { ...e.property, lawnSqft: c.lawn_sqft || e.property.lawnSqft } }));
   };
 
-  const save = async (status) => {
+  const locked = est.status === "approved" || est.status === "declined";
+  const save = async (status, { withLink = false, quiet = false } = {}) => {
     if (!est.customerName.trim() || result.lines.length === 0) return null;
     setBusy(true);
     const linesToStore = result.lines.map((l) => {
@@ -194,7 +202,7 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
       customer_id: est.customerId || null,
       customer_name: est.customerName.trim(),
       address: est.address || "",
-      status: status || est.status || "draft",
+      status: locked ? est.status : (status || est.status || "draft"),
       inputs: { property: prop, lines: linesToStore, notes: est.notes, internalNotes: est.internalNotes, terms: est.terms ?? pricing.terms, pricingVersion: pricing.version,
         proposal: Object.fromEntries(PROPOSAL_FIELDS.map((k) => [k, est[k]])) },
       line_items: result.lines.map((l) => ({ description: `${l.description}${l.frequency !== "once" ? ` (${FREQUENCIES.find((f) => f.id === l.frequency)?.label.toLowerCase()})` : ""}`, amount: l.price })),
@@ -210,15 +218,41 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
       recommendation: "",
       competitive_note: "",
     };
+    // Customer link: create once, and refresh the customer-facing snapshot until they respond
+    const token = est.publicToken || (withLink ? newToken() : null);
+    if (token) record.public_token = token;
+    if (token && !locked) record.snapshot = buildSnapshot();
+    if ((record.status === "sent" || withLink) && !est.sentAt) record.sent_at = new Date().toISOString();
+    if (locked) { delete record.status; }
     const saved = await db.saveEstimateRecord(record);
     setBusy(false);
-    if (saved) await onSaved(saved, status === "sent" ? `${estNo(saved.id)} saved and marked sent` : `${estNo(saved.id)} saved`);
+    if (saved) await onSaved(saved, quiet ? "" : status === "sent" ? `${estNo(saved.id)} saved and marked sent` : `${estNo(saved.id)} saved${token && !locked ? " · customer link updated" : ""}`);
     return saved;
   };
 
   const content = { ...DEFAULT_PROPOSAL_CONTENT, ...(pricing.proposalContent || {}) };
   const defaults = proposalDefaults(result, content);
   const pv = (k) => (est[k] === null || est[k] === undefined || est[k] === "" ? defaults[k] : est[k]);
+  // Customer-facing copy of the proposal (no costs, margins or internal notes)
+  const buildSnapshot = () => {
+    const rawLine = (k) => est.lines.find((x) => x.key === k) || {};
+    return {
+      template: est.template === "commercial" ? "commercial" : "residential",
+      customer: est.customerName.trim(), address: est.address || "",
+      projectTitle: pv("projectTitle"), pricingIntro: pv("pricingIntro"), startText: pv("startText"), timeOnSite: pv("timeOnSite"),
+      warranty: est.warranty || "", exclusions: pv("exclusions"),
+      notices: String(est.notices === null || est.notices === undefined ? defaults.notices || "" : est.notices).split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean),
+      notes: est.notes || "", validDays: Number(content.validDays) || 90, seasonMonths: pricing.season.months,
+      content: { companyName: content.companyName, contactName: content.contactName, phone: content.phone, email: content.email, whoWeAre: content.whoWeAre, reference1: content.reference1, reference2: content.reference2, commercialReference2: content.commercialReference2, depositTerms: content.depositTerms, optionalTerms: content.optionalTerms, payableBy: content.payableBy, validDays: content.validDays },
+      lines: result.lines.map((l) => ({ key: l.key, description: l.description, proposalText: l.proposalText || "", price: l.price, frequency: l.frequency, visits: l.visits, seasonPrice: l.seasonPrice, optional: !!l.optional, workIncluded: rawLine(l.key).workIncluded || "", acceptance: rawLine(l.key).acceptance || "" })),
+    };
+  };
+  const [linkOpen, setLinkOpen] = useState(false);
+  const getLink = async () => {
+    const saved = await save(est.status === "draft" ? "sent" : est.status, { withLink: true, quiet: true });
+    if (saved) setLinkOpen(true);
+  };
+
   const print = async () => {
     const saved = await save(est.status === "draft" ? "sent" : est.status);
     const number = estNo(saved?.id || est.id);
@@ -240,6 +274,7 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
 
   return (
     <div className="grid xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
+      {linkOpen && est.publicToken && <LinkModal est={est} customers={customers} title={pv("projectTitle")} onClose={() => setLinkOpen(false)} />}
       <div className="space-y-5 min-w-0">
         <Panel>
           <div className="flex items-center justify-between mb-3">
@@ -325,9 +360,13 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
             {result.recurringSeason > 0 && <Row l={`Recurring for the season`} v={fmtMoney(result.recurringSeason)} sub={`≈ ${fmtMoney(result.monthlyEquivalent)}/mo over ${pricing.season.months} months`} />}
             <div className="border-t border-stone-800 pt-2"><Row l="Estimated season total" v={fmtMoney(result.seasonTotal, { cents: true })} big tone="text-emerald-400" /></div>
           </div>
+          {locked && <ResponseBanner est={est} result={result} onDuplicate={() => setEst((e) => ({ ...e, id: null, status: "draft", publicToken: null, sentAt: null, response: null }))} />}
+          <button disabled={busy || !est.customerName.trim() || !result.lines.length} onClick={getLink} className={`${btnPrimary} w-full py-3 mb-2`}>
+            {est.publicToken ? (locked ? "View customer link" : "Update & copy customer link") : "Get customer link (approve online)"}
+          </button>
           <div className="grid grid-cols-2 gap-2">
             <button disabled={busy || !est.customerName.trim() || !result.lines.length} onClick={() => save()} className={btnGhost}>Save draft</button>
-            <button disabled={busy || !est.customerName.trim() || !result.lines.length} onClick={print} className={btnPrimary}>{est.template === "simple" ? "Print / PDF" : "Create proposal"}</button>
+            <button disabled={busy || !est.customerName.trim() || !result.lines.length} onClick={print} className={btnGhost}>{est.template === "simple" ? "Print / PDF" : "Print / PDF proposal"}</button>
           </div>
           {(!est.customerName.trim() || !result.lines.length) && <p className="text-[11px] text-stone-500 mt-2">Add a name and at least one service to save.</p>}
           <p className="text-[11px] text-stone-600 mt-2">Opens your {est.template === "commercial" ? "Commercial" : est.template === "simple" ? "one-page" : "Residential"} {est.template === "simple" ? "estimate" : "proposal template"}, filled in and ready to print or save as PDF. It also saves the estimate as sent; mark it accepted or declined under Saved so pricing advice learns.</p>
@@ -434,6 +473,50 @@ function ProposalPanel({ est, setEst, defaults, pricing }) {
         </div>
       )}
     </Panel>
+  );
+}
+
+function ResponseBanner({ est, result, onDuplicate }) {
+  const r = est.response || {};
+  const picked = result.lines.filter((l) => l.optional && (r.selection || []).includes(l.key)).map((l) => l.description);
+  const approved = est.status === "approved";
+  return (
+    <div className={`rounded-xl px-3 py-2.5 mb-3 text-xs ${approved ? "bg-emerald-950/60 border border-emerald-700/60 text-emerald-200" : "bg-red-950/40 border border-red-800/50 text-red-200"}`}>
+      <div className="font-bold text-sm">{approved ? "✓ Approved" : "Declined / changes requested"}{r.online ? " online" : ""}{r.approvedName ? ` by ${r.approvedName}` : ""}</div>
+      {(r.approvedAt || r.decidedAt) && <div className="opacity-80">{new Date(r.approvedAt || r.decidedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>}
+      {approved && r.total != null && <div className="mt-1">Approved total {fmtMoney(r.total, { cents: true })}{Number(r.recurring) ? ` + ${fmtMoney(r.recurring, { cents: true })}/visit` : ""}</div>}
+      {picked.length > 0 && <div className="mt-1">Optional items chosen: {picked.join(", ")}</div>}
+      {r.note && <div className="mt-1 italic">"{r.note}"</div>}
+      <div className="mt-2 opacity-80">Locked: edits won't change what the customer {approved ? "approved" : "saw"}. <button onClick={onDuplicate} className="underline font-semibold">Make a revised copy</button></div>
+    </div>
+  );
+}
+
+function LinkModal({ est, customers, title, onClose }) {
+  const url = proposalUrl(est.publicToken);
+  const cust = customers.find((c) => c.id === est.customerId) || {};
+  const first = (est.customerName || "").split(" ")[0] || "there";
+  const msg = `Hi ${first}, here's your proposal from Owen's Lawn & Landscape${title ? ` for ${title}` : ""}: ${url}\n\nYou can review it, choose any optional add-ons, and approve right from your phone. Questions? Call or text (317) 868-4699.\n\n— Owen`;
+  const [copied, setCopied] = useState("");
+  const copy = async (t, what) => { try { await navigator.clipboard.writeText(t); setCopied(what); setTimeout(() => setCopied(""), 2000); } catch { window.prompt("Copy this:", t); } };
+  const phone = String(cust.phone || "").replace(/[^\d+]/g, "");
+  return (
+    <Modal title="Customer link" onClose={onClose}>
+      <p className="text-sm text-stone-400 mb-3">Send this to {est.customerName}. They can review the proposal, pick optional add-ons, and approve or request changes online. You'll get an email and text when they respond.</p>
+      <div className="flex gap-2 mb-4">
+        <input readOnly value={url} onFocus={(e) => e.target.select()} className={`${inputCls} flex-1 min-w-0 text-xs`} />
+        <button onClick={() => copy(url, "link")} className={btnPrimary}>{copied === "link" ? "Copied ✓" : "Copy link"}</button>
+      </div>
+      <label className={label}>Message</label>
+      <textarea readOnly rows={6} value={msg} className={`${inputCls} w-full text-xs mb-3`} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <button onClick={() => copy(msg, "msg")} className={btnGhost}>{copied === "msg" ? "Copied ✓" : "Copy message"}</button>
+        <a href={`sms:${phone}${/iPhone|iPad|Mac/i.test(navigator.userAgent) ? "&" : "?"}body=${encodeURIComponent(msg)}`} className={`${btnGhost} text-center`}>Text</a>
+        <a href={`mailto:${cust.email || ""}?subject=${encodeURIComponent(`Your proposal from Owen's Lawn & Landscape${title ? ` — ${title}` : ""}`)}&body=${encodeURIComponent(msg)}`} className={`${btnGhost} text-center`}>Email</a>
+        <a href={`${url}?preview=1`} target="_blank" rel="noreferrer" className={`${btnGhost} text-center`}>Preview</a>
+      </div>
+      {est.response?.viewedAt && <p className="text-[11px] text-stone-500 mt-3">👁 Customer first opened it {new Date(est.response.viewedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{est.response.views > 1 ? ` · ${est.response.views} views` : ""}</p>}
+    </Modal>
   );
 }
 
@@ -603,18 +686,18 @@ function SavedList({ estimates, customers, onOpen, onChanged }) {
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(null);
   const list = estimates.filter((e) => !filter || e.status === filter);
-  const decided = estimates.filter((e) => e.status === "accepted" || e.status === "declined");
-  const won = estimates.filter((e) => e.status === "accepted");
+  const decided = estimates.filter((e) => e.status === "approved" || e.status === "declined");
+  const won = estimates.filter((e) => e.status === "approved");
   const pipeline = estimates.filter((e) => e.status === "sent");
   const total = (arr) => arr.reduce((t, e) => t + Number(e.season_total || e.annual_estimate || 0), 0);
 
   const setStatus = async (e, status) => {
     setBusy(e.id);
-    await db.saveEstimateRecord({ id: e.id, status, decided_at: status === "accepted" || status === "declined" ? new Date().toISOString() : null });
+    await db.saveEstimateRecord({ id: e.id, status, decided_at: status === "approved" || status === "declined" ? new Date().toISOString() : null });
     let note = `${estNo(e.id)} marked ${status}`;
     // Learning: remember the lawn size on the customer so mowing speed can be calibrated from logged times
     const lawn = Number(e.inputs?.property?.lawnSqft);
-    if (status === "accepted" && e.customer_id && lawn > 0) {
+    if (status === "approved" && e.customer_id && lawn > 0) {
       const c = customers.find((x) => x.id === e.customer_id);
       if (c && !c.lawn_sqft) { await db.updateCustomer(e.customer_id, { lawn_sqft: Math.round(lawn) }); note += ` · saved ${Math.round(lawn).toLocaleString()} sq ft lawn size to ${c.name}`; }
     }
@@ -631,7 +714,7 @@ function SavedList({ estimates, customers, onOpen, onChanged }) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile label="Estimates" value={estimates.length} sub={`${pipeline.length} waiting on an answer`} tone="text-blue-400" />
         <Tile label="Open pipeline" value={fmtMoney(total(pipeline))} sub="sent, not decided" tone="text-amber-400" />
-        <Tile label="Won" value={fmtMoney(total(won))} sub={`${won.length} accepted`} />
+        <Tile label="Won" value={fmtMoney(total(won))} sub={`${won.length} approved`} />
         <Tile label="Win rate" value={decided.length ? `${Math.round((won.length / decided.length) * 100)}%` : "—"} sub={`${decided.length} decided`} tone="text-emerald-400" />
       </div>
       <Panel>
@@ -639,7 +722,7 @@ function SavedList({ estimates, customers, onOpen, onChanged }) {
           <h3 className="font-bold">Saved estimates</h3>
           <select value={filter} onChange={(e) => setFilter(e.target.value)} className={inputCls}>
             <option value="">All statuses</option>
-            {["draft", "sent", "accepted", "declined"].map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
+            {["draft", "sent", "approved", "declined"].map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
           </select>
         </div>
         {list.length === 0 && <p className="text-sm text-stone-500 py-8 text-center">No estimates yet.</p>}
@@ -651,15 +734,22 @@ function SavedList({ estimates, customers, onOpen, onChanged }) {
                 <button onClick={() => onOpen(e)} className="flex-1 min-w-[220px] text-left">
                   <div className="text-sm"><span className="font-bold text-stone-100">{e.customer_name || (e.lead_id ? `Lead #${e.lead_id}` : "Unnamed")}</span> <span className="text-stone-500">· {estNo(e.id)} · {new Date(e.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></div>
                   <div className="text-xs text-stone-500 truncate">{lines.map((l) => l.name || l.description).filter(Boolean).join(", ")}</div>
+                  {e.responded_online && (e.status === "approved" || e.status === "declined") && (
+                    <div className={`text-xs mt-0.5 ${e.status === "approved" ? "text-emerald-400" : "text-red-300"}`}>
+                      {e.status === "approved" ? `✓ Approved online by ${e.approved_name}` : "Changes requested / declined online"} · {new Date(e.decided_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}{e.customer_note ? ` · "${e.customer_note.slice(0, 80)}${e.customer_note.length > 80 ? "…" : ""}"` : ""}
+                    </div>
+                  )}
+                  {e.public_token && !e.responded_online && <div className="text-[11px] text-stone-500 mt-0.5">{e.viewed_at ? `👁 Opened by customer ${new Date(e.viewed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "🔗 Link created, not opened yet"}</div>}
                 </button>
                 <div className="text-right">
-                  <div className="font-bold text-emerald-400">{fmtMoney(e.season_total || e.annual_estimate)}</div>
+                  <div className="font-bold text-emerald-400">{fmtMoney(e.status === "approved" && e.approval_total != null && e.responded_online ? e.approval_total : e.season_total || e.annual_estimate)}</div>
                   <div className="text-[11px] text-stone-500">{e.profit_margin ? `${e.profit_margin} margin` : ""}</div>
                 </div>
                 <select disabled={busy === e.id} value={e.status} onChange={(ev) => setStatus(e, ev.target.value)} className={`${inputCls} py-1.5`}>
-                  {["draft", "sent", "accepted", "declined"].map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
+                  {["draft", "sent", "approved", "declined"].map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
                 </select>
                 <button onClick={() => onOpen(e)} className="text-xs text-emerald-500 hover:text-emerald-400">{e.inputs?.lines ? "Open" : "Print"}</button>
+                {e.public_token && <button onClick={() => navigator.clipboard?.writeText(proposalUrl(e.public_token))} className="text-xs text-stone-400 hover:text-stone-200" title="Copy customer link">Copy link</button>}
                 <button disabled={busy === e.id} onClick={() => remove(e)} className="text-xs text-stone-600 hover:text-red-400">Delete</button>
               </div>
             );
@@ -987,7 +1077,7 @@ function ServiceCard({ s, p, setSvc, setP, history, stats, target, mow }) {
           {mow.sqftPerHour
             ? <>Your logged mowing times say <strong>{mow.sqftPerHour.toLocaleString()} sq ft per person-hour</strong> ({mow.n} visits, {mow.customers} customers). Settings use {(Number(s.production || 0) * 1000).toLocaleString()}.{" "}
                 <button onClick={() => setSvc("mowing", { production: Math.round(mow.sqftPerHour / 100) / 10 })} className="underline font-semibold">Use my actual speed</button></>
-            : <>Mowing price is time-based, so speed matters. Calibration needs lawn sizes: add them below (accepted estimates fill them in automatically) and keep logging time. {mow.n} usable visits so far, 3 needed.</>}
+            : <>Mowing price is time-based, so speed matters. Calibration needs lawn sizes: add them below (approved estimates fill them in automatically) and keep logging time. {mow.n} usable visits so far, 3 needed.</>}
         </div>
       )}
     </div>

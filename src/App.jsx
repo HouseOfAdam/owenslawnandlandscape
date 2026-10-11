@@ -6,6 +6,7 @@ import JobProfitabilityTab from "./admin/JobProfitability";
 import DashboardAnalytics from "./admin/DashboardAnalytics";
 import { JobTagSelect, ExpenseTagCell, buildJobTagOptions, splitAmount } from "./admin/JobTags";
 import EstimatorTab from "./admin/Estimator";
+import ProposalPage from "./public/ProposalPage";
 
 // Google Fonts — Inter (loaded via style injection)
 const _injectFonts = (() => {
@@ -20,19 +21,7 @@ const _injectFonts = (() => {
 // ============================================================
 // DATA
 // ============================================================
-// Magic link token map — in production these are stored in DB and rotated per campaign send
-// Token format: customer initials + 8-char hex. Demo token for testing: "DEMO-rc7f2a9b"
-const MAGIC_TOKENS = {
-  "rc7f2a9b": 1,  // Ron Cooper   ← DEMO TOKEN
-  "kl4e8d3c": 2,  // Kyle Lemon
-  "dw9b1f6a": 3,  // Deborah Whittemore
-  "rn2c5e7d": 4,  // Roger Newman
-  "jh6a3f1e": 5,  // Jason Hage
-  "cr8d4b9f": 6,  // Cory Rehs
-  "dm1e7c5a": 7,  // Dave Mauer
-  "tr5f2d8b": 8,  // Tara Roberts
-  "hh3b9e4c": 9,  // Herb Hokey
-};
+
 
 
 // Brand assets live in /public/brand (transparent PNG + WebP)
@@ -386,7 +375,6 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
           <div className="hidden md:flex items-center gap-8 text-sm">
             <button onClick={() => document.getElementById("services")?.scrollIntoView({ behavior: "smooth" })} className="text-[#5a6e62] hover:text-[#1a4a2e] font-medium transition-colors">Services</button>
             <button onClick={() => document.getElementById("testimonials")?.scrollIntoView({ behavior: "smooth" })} className="text-[#5a6e62] hover:text-[#1a4a2e] font-medium transition-colors">Reviews</button>
-            <button onClick={() => onPortalLogin("customer")} className="text-[#5a6e62] hover:text-[#1a4a2e] font-medium transition-colors">My Account</button>
             <button onClick={() => setEstimateOpen(true)} className="text-white px-5 py-2 rounded-full text-sm font-semibold transition-all hover:shadow-lg" style={{ background: "#1a4a2e" }}>
               Free Estimate
             </button>
@@ -399,7 +387,6 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
           <div className="md:hidden border-t border-[#e0d9cf] px-6 py-4 flex flex-col gap-4 text-sm" style={{ background: "#f7f4ef" }}>
             <button onClick={() => { setMenuOpen(false); setTimeout(() => document.getElementById("services")?.scrollIntoView({ behavior: "smooth" }), 50); }} className="text-[#5a6e62] font-medium text-left">Services</button>
             <button onClick={() => { setMenuOpen(false); setTimeout(() => document.getElementById("testimonials")?.scrollIntoView({ behavior: "smooth" }), 50); }} className="text-[#5a6e62] font-medium text-left">Reviews</button>
-            <button onClick={() => onPortalLogin("customer")} className="text-[#5a6e62] font-medium text-left">My Account</button>
             <button onClick={() => setEstimateOpen(true)} className="text-white px-5 py-2.5 rounded-full font-semibold" style={{ background: "#1a4a2e" }}>Free Estimate</button>
           </div>
         )}
@@ -573,7 +560,6 @@ const LandingPage = ({ onPortalLogin, onAnnualPlans }) => {
             <a href="mailto:owenlawnandlanscape09@gmail.com" className="flex items-center gap-1.5 hover:text-[#1a4a2e] transition-colors"><Icon name="mail" size={14} /> Email</a>
           </div>
           <div className="flex gap-4 text-sm">
-            <button onClick={() => onPortalLogin("customer")} className="font-medium hover:text-[#1a4a2e] transition-colors" style={{ color: "#7a9488" }}>Customer Portal</button>
             <button onClick={() => onPortalLogin("admin")} className="font-medium hover:text-[#1a4a2e] transition-colors" style={{ color: "#7a9488" }}>Admin Login</button>
           </div>
         </div>
@@ -640,225 +626,7 @@ const newLeads = [];
 // ============================================================
 // NEW CUSTOMER SIGN-UP FORM
 // ============================================================
-const SignUpForm = ({ onBack, onSubmit }) => {
-  const [step, setStep] = useState(1);
-  const [form, setForm] = useState({
-    name: "", email: "", phone: "", address: "",
-    serviceType: "", frequency: "", lotSize: "", notes: "",
-    heardFrom: "", referralCode: "",
-  });
-  const [submitted, setSubmitted] = useState(false);
-
-  const up = (field, val) => setForm(f => ({ ...f, [field]: val }));
-
-  const handleSubmit = async () => {
-    const lead = { ...form, id: Date.now(), submittedAt: new Date().toLocaleDateString(), status: "New Lead" };
-    newLeads.unshift(lead);
-    // Persist to Supabase — if referral code present, mark as referral source
-    const hasReferral = form.referralCode && form.referralCode.trim();
-    await db.createLead({
-      ...form,
-      source: hasReferral ? "referral" : "signup_form",
-      heardFrom: hasReferral ? "Customer Referral" : form.heardFrom,
-    });
-    setSubmitted(true);
-  };
-
-  const inputCls = "w-full bg-white border border-[#c8ddd0] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] focus:outline-none focus:border-[#1a4a2e] transition-colors placeholder-stone-300";
-  const labelCls = "block text-xs text-[#4a6358] uppercase tracking-wider font-semibold mb-1.5";
-
-  const Logo = () => (
-    <div className="flex items-center gap-3 mb-8">
-      <img src={BRAND_LOGO} alt="Owen's Lawn & Landscape" className="h-14 w-auto object-contain" />
-    </div>
-  );
-
-  if (submitted) return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", background: "#f7f4ef" }}>
-      <div className="w-full max-w-sm text-center">
-        <div className="bg-white border border-[#ddd8d0] rounded-3xl p-10 shadow-lg shadow-[#1a4a2e]/5">
-          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5" style={{ background: "#e6f2eb" }}>
-            <Icon name="check" size={32} color="#1a4a2e" />
-          </div>
-          <h2 className="text-2xl font-extrabold mb-2 text-[#111]">You're on the list!</h2>
-          <p className="text-[#6a7e72] text-sm leading-relaxed mb-6">Thanks, <strong className="text-[#1a4a2e]">{form.name.split(" ")[0]}</strong>! Owen will review your request and reach out within 24 hours to confirm your schedule and pricing.</p>
-          <div className="rounded-2xl p-4 mb-6 text-left space-y-1.5" style={{ background: "#f0f7f2", border: "1px solid #c8ddd0" }}>
-            <div className="flex justify-between text-sm"><span className="text-[#7a9488]">Service</span><span className="font-semibold text-[#111]">{form.serviceType}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-[#7a9488]">Frequency</span><span className="font-semibold text-[#111]">{form.frequency}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-[#7a9488]">Address</span><span className="font-semibold text-[#111] text-right max-w-[180px]">{form.address}</span></div>
-          </div>
-          <button onClick={onBack} className="w-full border border-[#c8ddd0] hover:border-[#1a4a2e] text-[#1a4a2e] py-3 rounded-xl text-sm font-semibold transition-all">
-            Back to Home
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", background: "#f7f4ef" }}>
-      <div className="w-full max-w-lg">
-        <button onClick={onBack} className="flex items-center gap-2 text-[#7a9488] hover:text-[#1a4a2e] text-sm mb-6 transition-colors font-medium">
-          ← Back to Home
-        </button>
-
-        {/* Progress */}
-        <div className="flex items-center gap-2 mb-6">
-          {[1,2,3].map(n => (
-            <div key={n} className="flex items-center gap-2 flex-1">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-all`} style={{ background: step >= n ? "#1a4a2e" : "#e0d9cf", color: step >= n ? "white" : "#7a9488" }}>
-                {step > n ? <Icon name="check" size={12} color="white" /> : n}
-              </div>
-              <div className="text-xs font-medium" style={{ color: step >= n ? "#1a4a2e" : "#a0a89e" }}>
-                {n === 1 ? "Contact Info" : n === 2 ? "Service Details" : "How You Found Us"}
-              </div>
-              {n < 3 && <div className="flex-1 h-px" style={{ background: step > n ? "#1a4a2e" : "#e0d9cf" }} />}
-            </div>
-          ))}
-        </div>
-
-        <div className="bg-white border border-[#ddd8d0] rounded-3xl p-8 shadow-lg shadow-[#1a4a2e]/5">
-          <Logo />
-
-          {step === 1 && (
-            <>
-              <h2 className="text-2xl font-extrabold mb-1 text-[#111]">Get Started</h2>
-              <p className="text-[#6a7e72] text-sm mb-6">Tell us about yourself so we can set up your account.</p>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className={labelCls}>Full Name *</label>
-                    <input value={form.name} onChange={e => up("name", e.target.value)} placeholder="Jane Smith" className={inputCls} />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Email Address *</label>
-                    <input type="email" value={form.email} onChange={e => up("email", e.target.value)} placeholder="jane@email.com" className={inputCls} />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Phone Number *</label>
-                    <input type="tel" value={form.phone} onChange={e => up("phone", e.target.value)} placeholder="(317) 555-0100" className={inputCls} />
-                  </div>
-                  <div className="col-span-2">
-                    <label className={labelCls}>Property Address *</label>
-                    <input value={form.address} onChange={e => up("address", e.target.value)} placeholder="123 Main St, Bargersville, IN" className={inputCls} />
-                  </div>
-                </div>
-                <button onClick={() => setStep(2)} disabled={!form.name || !form.email || !form.phone || !form.address}
-                  className="w-full disabled:opacity-40 text-white py-3.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2 mt-2 hover:opacity-90" style={{ background: "#1a4a2e" }}>
-                  Continue <Icon name="arrow" size={16} color="white" />
-                </button>
-              </div>
-            </>
-          )}
-
-          {step === 2 && (
-            <>
-              <h2 className="text-2xl font-extrabold mb-1 text-[#111]">Service Preferences</h2>
-              <p className="text-[#6a7e72] text-sm mb-6">Help us prepare the right quote for your property.</p>
-              <div className="space-y-4">
-                <div>
-                  <label className={labelCls}>Service Type *</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {["Weekly Mowing", "Bi-Weekly Mowing", "Landscaping", "Lawn Treatment", "Aeration & Seeding", "One-Time Cleanup"].map(s => (
-                      <button key={s} onClick={() => up("serviceType", s)}
-                        className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left`}
-                        style={{ background: form.serviceType === s ? "#e6f2eb" : "white", borderColor: form.serviceType === s ? "#1a4a2e" : "#c8ddd0", color: form.serviceType === s ? "#1a4a2e" : "#4a6358" }}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className={labelCls}>Preferred Service Frequency</label>
-                  <select value={form.frequency} onChange={e => up("frequency", e.target.value)} className={inputCls}>
-                    <option value="">Select frequency...</option>
-                    <option>Weekly</option>
-                    <option>Bi-Weekly</option>
-                    <option>Monthly</option>
-                    <option>As Needed / One-Time</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={labelCls}>Approximate Lot Size</label>
-                  <select value={form.lotSize} onChange={e => up("lotSize", e.target.value)} className={inputCls}>
-                    <option value="">Select lot size...</option>
-                    <option>Small — under 5,000 sq ft</option>
-                    <option>Medium — 5,000–10,000 sq ft</option>
-                    <option>Large — 10,000–20,000 sq ft</option>
-                    <option>Very Large — over 20,000 sq ft</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={labelCls}>Additional Notes</label>
-                  <textarea value={form.notes} onChange={e => up("notes", e.target.value)} rows={2} placeholder="Gate codes, pets, areas to avoid, special requests..."
-                    className={`${inputCls} resize-none`} />
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={() => setStep(1)} className="flex-1 border border-[#c8ddd0] hover:border-[#1a4a2e] text-[#4a6358] py-3 rounded-xl font-semibold text-sm transition-all">
-                    Back
-                  </button>
-                  <button onClick={() => setStep(3)} disabled={!form.serviceType}
-                    className="flex-[2] disabled:opacity-40 text-white py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 hover:opacity-90" style={{ background: "#1a4a2e" }}>
-                    Continue <Icon name="arrow" size={16} color="white" />
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-
-          {step === 3 && (
-            <>
-              <h2 className="text-2xl font-extrabold mb-1 text-[#111]">Almost Done!</h2>
-              <p className="text-[#6a7e72] text-sm mb-6">Last step — just a couple quick questions.</p>
-              <div className="space-y-4">
-                <div>
-                  <label className={labelCls}>How did you hear about us? *</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {["Friend / Neighbor", "Referral Code", "Facebook / Social", "Drove by / Yard Sign", "Google Search", "Other"].map(s => (
-                      <button key={s} onClick={() => up("heardFrom", s)}
-                        className="px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left"
-                        style={{ background: form.heardFrom === s ? "#e6f2eb" : "white", borderColor: form.heardFrom === s ? "#1a4a2e" : "#c8ddd0", color: form.heardFrom === s ? "#1a4a2e" : "#4a6358" }}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {form.heardFrom === "Referral Code" && (
-                  <div>
-                    <label className={labelCls}>Referral Code</label>
-                    <input value={form.referralCode} onChange={e => up("referralCode", e.target.value.toUpperCase())}
-                      placeholder="Enter code" className={`${inputCls} font-mono tracking-widest`} />
-                  </div>
-                )}
-                <div className="rounded-2xl p-4 space-y-1.5 text-sm" style={{ background: "#f0f7f2", border: "1px solid #c8ddd0" }}>
-                  <div className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: "#7a9488" }}>Your Request Summary</div>
-                  <div className="flex justify-between"><span className="text-[#7a9488]">Name</span><span className="font-semibold text-[#111]">{form.name}</span></div>
-                  <div className="flex justify-between"><span className="text-[#7a9488]">Address</span><span className="font-semibold text-right max-w-[200px] truncate text-[#111]">{form.address}</span></div>
-                  <div className="flex justify-between"><span className="text-[#7a9488]">Service</span><span className="font-semibold text-[#111]">{form.serviceType}</span></div>
-                  <div className="flex justify-between"><span className="text-[#7a9488]">Frequency</span><span className="font-semibold text-[#111]">{form.frequency || "—"}</span></div>
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={() => setStep(2)} className="flex-1 border border-[#c8ddd0] hover:border-[#1a4a2e] text-[#4a6358] py-3 rounded-xl font-semibold text-sm transition-all">
-                    Back
-                  </button>
-                  <button onClick={handleSubmit} disabled={!form.heardFrom}
-                    className="flex-[2] disabled:opacity-40 text-white py-3 rounded-xl font-bold transition-all hover:opacity-90" style={{ background: "#1a4a2e" }}>
-                    Submit Request ✓
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// LOGIN PAGE
-// ============================================================
-const LoginPage = ({ type, onLogin, onBack, onSignUp, onSendLink }) => {
+const LoginPage = ({ onLogin, onBack }) => {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
@@ -888,8 +656,8 @@ const LoginPage = ({ type, onLogin, onBack, onSignUp, onSendLink }) => {
           <div className="flex items-center gap-3 mb-8">
             <img src={BRAND_LOGO} alt="Owen's Lawn & Landscape" className="h-16 w-auto object-contain" />
           </div>
-          <h2 className="text-2xl font-extrabold mb-1 text-[#111]">{type === "admin" ? "Admin Portal" : "Customer Portal"}</h2>
-          <p className="text-[#6a7e72] text-sm mb-6">{type === "admin" ? "Business management dashboard" : "Sign in to manage your account"}</p>
+          <h2 className="text-2xl font-extrabold mb-1 text-[#111]">Admin Portal</h2>
+          <p className="text-[#6a7e72] text-sm mb-6">Business management dashboard</p>
           <div className="space-y-4">
             <div>
               <label className={lLabel}>Email</label>
@@ -905,722 +673,12 @@ const LoginPage = ({ type, onLogin, onBack, onSignUp, onSendLink }) => {
             </button>
             {error && <p className="text-red-600 text-xs text-center mt-2">{error}</p>}
           </div>
-          {type === "customer" && (
-            <div className="mt-6 pt-6 border-t border-[#e8e2da] space-y-3">
-              <button onClick={onSendLink}
-                className="w-full border font-bold text-sm transition-all flex items-center justify-center gap-2 py-3 rounded-xl hover:opacity-90"
-                style={{ background: "#e6f2eb", borderColor: "#b8d4c0", color: "#1a4a2e" }}>
-                <Icon name="mail" size={15} color="#1a4a2e" /> Send Me a Login Link
-              </button>
-              <p className="text-center text-xs" style={{ color: "#a0a89e" }}>No password needed — we'll text or email you a one-tap link.</p>
-              <div className="pt-2 border-t border-[#e8e2da] text-center">
-                <p className="text-xs mb-2" style={{ color: "#a0a89e" }}>New customer?</p>
-                <button onClick={onSignUp}
-                  className="w-full border border-[#c8ddd0] hover:border-[#1a4a2e] text-[#4a6358] hover:text-[#1a4a2e] py-2.5 rounded-xl text-sm font-semibold transition-all">
-                  Sign Up →
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 };
 
-// ============================================================
-// SCHEDULE TAB (customer portal)
-// ============================================================
-const ScheduleTab = ({ customer }) => {
-  const [changeModal, setChangeModal] = useState(null);
-  const [changeType, setChangeType] = useState("");
-  const [changeDate, setChangeDate] = useState("");
-  const [changeNote, setChangeNote] = useState("");
-  const [submitted, setSubmitted] = useState(null);
-
-  const DOW_NAMES = { "Monday":1, "Tuesday":2, "Wednesday":3, "Thursday":4, "Friday":5, "Saturday":6 };
-  const routeDay = customer.route_day || "Friday";
-  const routeDow = DOW_NAMES[routeDay] || 5;
-  const frequency = customer.frequency || "Weekly";
-  const isWeekly = frequency === "Weekly";
-  const isBiweekly = frequency === "Biweekly";
-  const visitInterval = isBiweekly ? 14 : 7;
-
-  // Season start: Apr 2, 2026
-  const seasonStart = new Date(2026, 3, 2);
-  // Find the first occurrence of customer's route day on or after season start
-  const startDow = seasonStart.getDay() === 0 ? 7 : seasonStart.getDay();
-  let daysUntilRoute = routeDow - startDow;
-  if (daysUntilRoute < 0) daysUntilRoute += 7;
-  const firstVisit = new Date(seasonStart);
-  firstVisit.setDate(seasonStart.getDate() + daysUntilRoute);
-
-  const SEASON_START_LABEL = firstVisit.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-
-  const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-  // Generate next 8 visits from first visit date
-  const visits = Array.from({ length: 8 }, (_, i) => {
-    const d = new Date(firstVisit);
-    d.setDate(firstVisit.getDate() + i * visitInterval);
-    return {
-      id: i,
-      dayLabel: days[d.getDay()],
-      dateLabel: `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`,
-      dayNum: d.getDate(),
-      monthLabel: months[d.getMonth()],
-      service: `${frequency} ${customer.service || "Mowing"}`,
-      isFirst: i === 0,
-    };
-  });
-
-  const handleChangeSubmit = (visit) => {
-    setSubmitted(visit.id);
-    setChangeModal(null);
-    setChangeType(""); setChangeDate(""); setChangeNote("");
-  };
-
-  return (
-    <div>
-      {/* Season Banner */}
-      <div className="rounded-2xl p-5 mb-6 flex items-center gap-4" style={{ background: "#e6f2eb", border: "1px solid #c8ddd0" }}>
-        <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0" style={{ background: "#c8ddd0" }}>
-          <Icon name="leaf" size={22} color="#1a4a2e" />
-        </div>
-        <div className="flex-1">
-          <div className="font-bold text-sm" style={{ color: "#1a4a2e" }}>2026 Season</div>
-          <div className="text-sm mt-0.5" style={{ color: "#4a6358" }}>
-            Your first visit is <strong style={{ color: "#1a1a1a" }}>{SEASON_START_LABEL}</strong>. Services run {frequency.toLowerCase()} on {routeDay}s through November.
-          </div>
-        </div>
-        <Badge color="green">Confirmed</Badge>
-      </div>
-
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-extrabold" style={{ color: "#1a1a1a" }}>Your 2026 Schedule</h1>
-          <p className="text-sm" style={{ color: "#6a7e72" }}>Showing next 8 visits · {frequency} {customer.service || "Mowing"} · {routeDay}s</p>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        {visits.map((v) => (
-          <div key={v.id} className="rounded-2xl p-5" style={{ background: v.isFirst ? "#f0f7f2" : "white", border: v.isFirst ? "1px solid #a3c9b0" : "1px solid #e8e2da" }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                {/* Date badge */}
-                <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
-                  style={{ background: v.isFirst ? "#c8ddd0" : "#f0ede8" }}>
-                  <div className="text-[10px] uppercase font-bold" style={{ color: v.isFirst ? "#1a4a2e" : "#7a9488" }}>{v.monthLabel}</div>
-                  <div className="text-xl font-black leading-none" style={{ color: v.isFirst ? "#1a4a2e" : "#1a1a1a" }}>{v.dayNum}</div>
-                  <div className="text-[9px]" style={{ color: v.isFirst ? "#4a6358" : "#9aada6" }}>{v.dayLabel}</div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm" style={{ color: "#1a1a1a" }}>{v.service}</span>
-                    {v.isFirst && <Badge color="green">First Visit</Badge>}
-                    {submitted === v.id && <Badge color="amber">Change Requested</Badge>}
-                  </div>
-                  <div className="text-xs mt-0.5" style={{ color: "#7a9488" }}>{v.dateLabel}</div>
-                </div>
-              </div>
-
-              {submitted !== v.id ? (
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={() => { setChangeModal(v); setChangeType("reschedule"); }}
-                    className="text-xs px-3 py-1.5 rounded-lg transition-all font-medium"
-                    style={{ border: "1px solid #c8ddd0", color: "#4a6358", background: "white" }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = "#1a4a2e"; e.currentTarget.style.color = "#1a4a2e"; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = "#c8ddd0"; e.currentTarget.style.color = "#4a6358"; }}>
-                    Reschedule
-                  </button>
-                </div>
-              ) : (
-                <span className="text-xs italic shrink-0" style={{ color: "#d97706" }}>Pending review</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-5 rounded-2xl p-4 flex items-start gap-3" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf" }}>
-        <Icon name="alert" size={16} color="#9aada6" />
-        <p className="text-xs leading-relaxed" style={{ color: "#7a9488" }}>
-          Schedule change requests are reviewed by Owen within 24 hours. Changes requested less than 48 hours before a visit may not be accommodated. For urgent changes, call <a href="tel:3178684699" style={{ color: "#1a4a2e" }} className="hover:underline">(317) 868-4699</a>.
-        </p>
-      </div>
-
-      {/* Change Request Modal */}
-      {changeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setChangeModal(null)}>
-          <div className="rounded-3xl p-8 max-w-md w-full shadow-2xl" style={{ background: "white", border: "1px solid #e0d9cf" }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-xl font-black" style={{ color: "#1a1a1a" }}>{changeType === "skip" ? "Skip a Visit" : "Reschedule Visit"}</h3>
-              <button onClick={() => setChangeModal(null)} style={{ color: "#9aada6" }}><Icon name="x" size={20} /></button>
-            </div>
-
-            <div className="rounded-xl px-4 py-3 mb-5 text-sm" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf" }}>
-              <div style={{ color: "#7a9488" }}>Requested change for:</div>
-              <div className="font-bold mt-0.5" style={{ color: "#1a1a1a" }}>{changeModal.dateLabel} — {changeModal.service}</div>
-            </div>
-
-            {changeType === "reschedule" && (
-              <div className="mb-4">
-                <label className="block text-xs uppercase tracking-wider mb-1.5" style={{ color: "#7a9488" }}>Preferred New Date</label>
-                <input type="date" value={changeDate} onChange={e => setChangeDate(e.target.value)}
-                  className="w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-colors"
-                  style={{ background: "white", border: "1px solid #c8ddd0" }} />
-              </div>
-            )}
-
-            <div className="mb-5">
-              <label className="block text-xs uppercase tracking-wider mb-1.5" style={{ color: "#7a9488" }}>
-                {changeType === "skip" ? "Reason for skipping (optional)" : "Additional notes (optional)"}
-              </label>
-              <textarea value={changeNote} onChange={e => setChangeNote(e.target.value)} rows={3}
-                placeholder={changeType === "skip" ? "e.g. Traveling, lawn doesn't need it this week..." : "e.g. Please come in the afternoon..."}
-                className="w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-colors resize-none"
-                style={{ background: "white", border: "1px solid #c8ddd0", color: "#1a1a1a" }} />
-            </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setChangeModal(null)}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all"
-                style={{ border: "1px solid #e0d9cf", color: "#7a9488", background: "white" }}>
-                Cancel
-              </button>
-              <button onClick={() => handleChangeSubmit(changeModal)}
-                className="flex-[2] py-3 rounded-xl font-bold text-sm text-white transition-all"
-                style={{ background: changeType === "skip" ? "#dc2626" : "#1a4a2e" }}>
-                {changeType === "skip" ? "Request Skip" : "Submit Reschedule"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================================
-// CUSTOMER PORTAL
-// ============================================================
-const CustomerPortal = ({ onLogout, customer }) => {
-  const [tab, setTab] = useState("schedule");
-  const [feedback, setFeedback] = useState("");
-  const [feedbackRating, setFeedbackRating] = useState(5);
-  const [feedbackSent, setFeedbackSent] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [payModal, setPayModal] = useState(null);
-  const [paidInvoices, setPaidInvoices] = useState([]);
-
-  // Fetch real invoices for this customer from Supabase
-  const [customerInvoices, setCustomerInvoices] = useState([]);
-  const [invoicesLoading, setInvoicesLoading] = useState(true);
-
-  useEffect(() => {
-    const loadInvoices = async () => {
-      if (!isOnline() || !customer?.token) { setInvoicesLoading(false); return; }
-      // Token-checked lookup: a customer can only ever load their own invoices
-      const { data, error } = await supabase.rpc("portal_invoices", { p_token: customer.token || "" });
-      if (!error && data) setCustomerInvoices(data);
-      setInvoicesLoading(false);
-    };
-    loadInvoices();
-  }, [customer?.token]);
-
-  const VENMO_HANDLE = "owenlawnlandscape";
-
-  const effectiveInvoices = customerInvoices.map(inv =>
-    paidInvoices.includes(inv.id) ? { ...inv, status: "paid" } : inv
-  );
-  const outstandingInvoices = effectiveInvoices.filter(inv => inv.status === "unpaid");
-  const invoiceTotal = outstandingInvoices.reduce((sum, inv) => sum + Number(inv.total), 0);
-  const accountCredit = Math.min(0, Number(customer.balance || 0)); // negative = credit
-  const totalOwed = Math.max(0, invoiceTotal + accountCredit); // credit reduces what's owed
-  const hasCredit = accountCredit < 0;
-
-  // Compute next visit from customer route_day + frequency + season start
-  const DOW_MAP_PORTAL = { "Monday":1, "Tuesday":2, "Wednesday":3, "Thursday":4, "Friday":5, "Saturday":6 };
-  const routeDay = customer.route_day || "Friday";
-  const routeDow = DOW_MAP_PORTAL[routeDay] || 5;
-  const frequency = customer.frequency || "Weekly";
-  const visitInterval = frequency === "Biweekly" ? 14 : 7;
-
-  // Compute next visit — fully self-contained
-  const nextVisit = (() => {
-    // Season start: Apr 2, 2026
-    const ss = new Date(2026, 3, 2);
-    const ssDow = ss.getDay() === 0 ? 7 : ss.getDay();
-    let offset = routeDow - ssDow;
-    if (offset < 0) offset += 7;
-    // First visit = first occurrence of route day on/after season start
-    const fv = new Date(2026, 3, 2 + offset);
-    // Walk forward until we reach today or later
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const result = new Date(fv);
-    while (result < today) {
-      result.setDate(result.getDate() + visitInterval);
-    }
-    return result;
-  })();
-  const nextVisitLabel = nextVisit.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
-  const tabs = [
-    { id: "dashboard", label: "Dashboard", icon: "home" },
-    { id: "schedule", label: "Schedule", icon: "calendar" },
-    { id: "invoices", label: "Invoices", icon: "invoice" },
-    { id: "services", label: "Request Service", icon: "tool" },
-    { id: "referral", label: "Referrals", icon: "share" },
-    { id: "feedback", label: "Feedback", icon: "star" },
-  ];
-
-  const copyCode = () => { navigator.clipboard?.writeText(customer.referral_code || customer.referralCode || ""); setCopied(true); setTimeout(() => setCopied(false), 2000); };
-
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  return (
-    <div className="min-h-screen flex text-[#1a1a1a]" style={{ fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", background: "#f7f4ef" }}>
-      {/* MOBILE HEADER */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 border-b" style={{ background: "#ffffff", borderColor: "#e0d9cf" }}>
-        <div className="flex items-center gap-2">
-          <img src={BRAND_MARK} alt="Owen's Lawn & Landscape" className="h-9 w-auto object-contain" />
-          <span className="text-sm font-bold text-[#111]">{customer.name.split(" ")[0]}</span>
-        </div>
-        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-1" style={{ color: "#7a9488" }}>
-          <Icon name={mobileMenuOpen ? "x" : "menu"} size={22} />
-        </button>
-      </div>
-
-      {/* SIDEBAR — hidden on mobile, slide-in when open */}
-      {mobileMenuOpen && <div className="md:hidden fixed inset-0 bg-black/40 z-20" onClick={() => setMobileMenuOpen(false)} />}
-      <div className={`w-60 border-r border-[#e0d9cf] flex flex-col fixed h-full z-30 transition-transform duration-200 ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`} style={{ background: "#ffffff" }}>
-        <div className="p-5 border-b border-[#e8e2da]">
-          <div className="flex items-center gap-2">
-            <img src={BRAND_LOGO} alt="Owen's Lawn & Landscape" className="h-14 w-auto object-contain" />
-          </div>
-        </div>
-        <div className="p-4 border-b border-[#e8e2da]">
-          <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg mb-2 text-white" style={{ background: "#1a4a2e" }}>{customer.name[0]}</div>
-          <div className="text-sm font-bold text-[#111]">{customer.name}</div>
-          <div className="text-xs text-[#7a9488] mt-0.5">{customer.service} • {customer.frequency}</div>
-          <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: "#e6f2eb", color: "#1a4a2e", border: "1px solid #b8d4c0" }}>Active Customer</span>
-        </div>
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => { setTab(t.id); setMobileMenuOpen(false); }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all"
-              style={{ background: tab === t.id ? "#e6f2eb" : "transparent", color: tab === t.id ? "#1a4a2e" : "#5a6e62", fontWeight: tab === t.id ? "600" : "400" }}>
-              <Icon name={t.icon} size={16} color={tab === t.id ? "#1a4a2e" : "#7a9488"} />
-              {t.label}
-            </button>
-          ))}
-        </nav>
-        <div className="p-4 border-t border-[#e8e2da]">
-          <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[#7a9488] hover:bg-[#f0f7f2] hover:text-[#1a4a2e] transition-all">
-            <Icon name="logout" size={16} color="currentColor" /> Sign Out
-          </button>
-        </div>
-      </div>
-
-      {/* MAIN */}
-      <div className="md:ml-60 flex-1 p-4 md:p-8 pt-16 md:pt-8">
-
-        {/* ── OUTSTANDING BALANCE BANNER ── */}
-        {totalOwed > 0 && (
-          <div className="mb-6 border rounded-2xl px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4" style={{ background: "#fffbeb", borderColor: "#fcd34d" }}>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#fef3c7" }}>
-                <Icon name="invoice" size={16} color="#d97706" />
-              </div>
-              <div>
-                <div className="text-sm font-bold text-amber-700">Balance Due: ${totalOwed.toFixed(2)}</div>
-                <div className="text-xs text-amber-600/70 mt-0.5">
-                  {outstandingInvoices.length} unpaid invoice{outstandingInvoices.length !== 1 ? "s" : ""}
-                </div>
-              </div>
-            </div>
-            <button onClick={() => setTab("invoices")}
-              className="shrink-0 text-white text-sm font-bold px-4 py-2 rounded-xl transition-all hover:opacity-90" style={{ background: "#d97706" }}>
-              Pay Now →
-            </button>
-          </div>
-        )}
-
-        {tab === "dashboard" && (
-          <div>
-            <h1 className="text-2xl font-extrabold mb-1 text-[#111]">Welcome back, {customer.name.split(" ")[0]}!</h1>
-            <p className="text-[#7a9488] text-sm mb-6">Here's your account overview</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6">
-              {[
-                { label: "Service Rate", value: `$${customer.price}`, sub: `Per visit · ${customer.frequency}`, icon: "dollar", color: "#1a4a2e" },
-                { label: "Account Balance", value: hasCredit && totalOwed === 0 ? `-$${Math.abs(accountCredit).toFixed(2)}` : totalOwed > 0 ? `$${totalOwed.toFixed(2)}` : "$0.00", sub: hasCredit && totalOwed === 0 ? `$${Math.abs(accountCredit).toFixed(2)} referral credit` : totalOwed > 0 ? "Payment due" : "All paid up!", icon: hasCredit && totalOwed === 0 ? "dollar" : totalOwed > 0 ? "invoice" : "check", color: hasCredit && totalOwed === 0 ? "#1a4a2e" : totalOwed > 0 ? "#d97706" : "#1a4a2e" },
-                { label: "Next Visit", value: nextVisitLabel, sub: `${routeDay} · ${customer.service || "Mowing"}`, icon: "calendar", color: "#1a4a2e" },
-              ].map((s, i) => (
-                <div key={i} className="bg-white border border-[#e8e2da] rounded-2xl p-5 shadow-sm">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-xs text-[#7a9488] uppercase tracking-wider font-semibold">{s.label}</p>
-                      <p className="text-3xl font-black mt-1" style={{ color: s.color }}>{s.value}</p>
-                      <p className="text-xs text-[#7a9488] mt-1">{s.sub}</p>
-                    </div>
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "#e6f2eb" }}>
-                      <Icon name={s.icon} size={18} color={s.color} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="grid md:grid-cols-2 gap-5">
-              <div className="bg-white border border-[#e8e2da] rounded-2xl p-5">
-                <h3 className="font-bold mb-3 flex items-center gap-2 text-[#111]"><Icon name="calendar" size={16} color="#1a4a2e" /> Your Schedule</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: "#f7f4ef" }}>
-                    <div>
-                      <div className="text-sm font-semibold text-[#111]">Every {routeDay}</div>
-                      <div className="text-xs text-[#7a9488]">{customer.frequency} {customer.service || "Mowing"}</div>
-                    </div>
-                    <Badge color="green">Active</Badge>
-                  </div>
-                  <div className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: "#f0f7f2", border: "1px solid #c8ddd0" }}>
-                    <div>
-                      <div className="text-sm font-semibold text-[#111]">Next: {nextVisit.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
-                      <div className="text-xs text-[#7a9488]">{customer.service || "Mowing"}</div>
-                    </div>
-                    <Badge color="green">Scheduled</Badge>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white border border-[#e8e2da] rounded-2xl p-5">
-                <h3 className="font-bold mb-3 flex items-center gap-2 text-[#111]"><Icon name="invoice" size={16} color="#1a4a2e" /> Recent Invoices</h3>
-                {customerInvoices.length === 0 ? (
-                  <div className="text-sm text-[#7a9488] text-center py-6">
-                    {invoicesLoading ? "Loading…" : "No invoices yet"}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {effectiveInvoices.slice(0, 3).map((inv) => (
-                      <div key={inv.id} className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: "#f7f4ef" }}>
-                        <div>
-                          <div className="text-sm font-semibold text-[#111]">{inv.invoice_number}</div>
-                          <div className="text-xs text-[#7a9488]">{inv.date_issued}</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold" style={{ color: "#1a4a2e" }}>${Number(inv.total).toFixed(2)}</span>
-                          <Badge color={inv.status === "unpaid" ? "yellow" : "green"}>{inv.status === "unpaid" ? "Unpaid" : "Paid"}</Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "schedule" && (
-          <ScheduleTab customer={customer} />
-        )}
-
-        {tab === "invoices" && (
-          <div>
-            <h1 className="text-2xl font-extrabold mb-1 text-[#111]">Invoices & Payments</h1>
-            <p className="text-[#7a9488] text-sm mb-6">View your balance and pay outstanding invoices</p>
-
-            {totalOwed > 0 ? (
-              <div className="rounded-2xl p-5 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4" style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
-                <div>
-                  <div className="text-amber-600 text-sm font-semibold mb-0.5">Outstanding Balance</div>
-                  <div className="text-4xl font-black text-amber-700">${totalOwed.toFixed(2)}</div>
-                  <div className="text-xs text-amber-600/70 mt-1">{outstandingInvoices.length} invoice{outstandingInvoices.length !== 1 ? "s" : ""} · Due on receipt</div>
-                </div>
-                <button onClick={() => setPayModal(outstandingInvoices[0])}
-                  className="text-white font-black px-6 py-3 rounded-2xl text-sm transition-all hover:opacity-90" style={{ background: "#d97706" }}>
-                  Pay ${totalOwed.toFixed(2)} Now
-                </button>
-              </div>
-            ) : (
-              <div className="rounded-2xl p-5 mb-6 flex items-center gap-4" style={{ background: "#e6f2eb", border: "1px solid #b8d4c0" }}>
-                <Icon name="check" size={36} color="#1a4a2e" />
-                <div>
-                  <div className="text-sm font-semibold" style={{ color: "#1a4a2e" }}>All Paid Up!</div>
-                  <div className="text-3xl font-black" style={{ color: "#1a4a2e" }}>$0.00</div>
-                  <div className="text-xs text-[#5a8a6a] mt-0.5">No outstanding invoices</div>
-                </div>
-              </div>
-            )}
-
-            {invoicesLoading ? (
-              <div className="text-center py-12 text-[#7a9488] text-sm">Loading invoices…</div>
-            ) : effectiveInvoices.length === 0 ? (
-              <div className="text-center py-12 text-[#7a9488] text-sm">No invoices yet. Your first invoice will appear here after services begin.</div>
-            ) : (
-              <div className="space-y-3">
-                {effectiveInvoices.map((inv) => {
-                  const unpaid = inv.status === "unpaid";
-                  const lineItems = inv.line_items || [];
-                  return (
-                    <div key={inv.id} className="rounded-2xl border p-4 transition-all" style={{ background: unpaid ? "#fffbeb" : "white", borderColor: unpaid ? "#fcd34d" : "#e8e2da" }}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-bold text-base text-[#111]">{inv.invoice_number}</span>
-                            <Badge color={unpaid ? "yellow" : "green"}>{unpaid ? "Unpaid" : "Paid"}</Badge>
-                          </div>
-                          <div className="text-xs text-[#7a9488] mb-2">Issued {inv.date_issued}{inv.paid_on ? ` · Paid ${inv.paid_on}` : ""}</div>
-                          {lineItems.map((li, j) => (
-                            <div key={j} className="text-xs text-[#5a6e62]">• {li.description} — ${Number(li.amount).toFixed(2)}</div>
-                          ))}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <div className="text-2xl font-extrabold mb-2" style={{ color: unpaid ? "#d97706" : "#7a9488" }}>
-                            ${Number(inv.total).toFixed(2)}
-                          </div>
-                          {unpaid && (
-                            <button onClick={() => setPayModal(inv)}
-                              className="text-white text-xs font-bold px-4 py-2 rounded-xl transition-all hover:opacity-90" style={{ background: "#d97706" }}>
-                              Pay Now →
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── PAY MODAL ── */}
-        {payModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white border border-[#ddd8d0] rounded-3xl w-full max-w-md shadow-2xl shadow-[#1a4a2e]/10">
-              <div className="px-6 pt-6 pb-4 border-b border-[#e8e2da] flex items-start justify-between">
-                <div>
-                  <h2 className="text-xl font-black text-[#111]">Pay {payModal.invoice_number}</h2>
-                  <p className="text-[#7a9488] text-sm mt-0.5">Choose how you'd like to pay</p>
-                </div>
-                <button onClick={() => setPayModal(null)} className="text-[#a0a89e] hover:text-[#111] transition-colors text-xl leading-none mt-1">✕</button>
-              </div>
-              <div className="px-6 py-4 border-b border-[#e8e2da] flex items-center justify-between" style={{ background: "#f7f4ef" }}>
-                <span className="text-[#7a9488] text-sm">Amount due</span>
-                <span className="text-2xl font-extrabold text-amber-600">${Number(payModal.total).toFixed(2)}</span>
-              </div>
-
-              {/* Payment options */}
-              <div className="px-6 py-5 space-y-3">
-                {/* Venmo */}
-                <a href={`venmo://paycharge?txn=pay&recipients=${VENMO_HANDLE}&amount=${Number(payModal.total)}&note=${encodeURIComponent(payModal.invoice_number + " - Owen's Lawn + Landscape")}`}
-                  target="_blank" rel="noreferrer"
-                  className="flex items-center gap-4 border rounded-2xl px-4 py-3.5 transition-all group hover:shadow-md"
-                  style={{ background: "#e8f4ff", borderColor: "#93c5fd" }}>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white font-black text-sm" style={{ background: "#008CFF" }}>V</div>
-                  <div className="flex-1">
-                    <div className="font-bold text-[#111] text-sm">Pay with Venmo</div>
-                    <div className="text-xs text-[#7a9488]">@{VENMO_HANDLE} · Opens Venmo app</div>
-                  </div>
-                  <span className="text-[#a0a89e] text-sm">↗</span>
-                </a>
-
-                {/* Apple Pay */}
-                <button onClick={() => {
-                  navigator.clipboard?.writeText("317-868-4699");
-                  alert("Phone number copied! Open Apple Pay and send $" + Number(payModal.total).toFixed(2) + " to 317-868-4699 with note: " + payModal.invoice_number);
-                }}
-                  className="w-full flex items-center gap-4 border rounded-2xl px-4 py-3.5 transition-all group text-left hover:shadow-md"
-                  style={{ background: "#f5f5f7", borderColor: "#d1d5db" }}>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-lg" style={{ background: "#1c1c1e", color: "white" }}></div>
-                  <div className="flex-1">
-                    <div className="font-bold text-[#111] text-sm">Pay with Apple Pay</div>
-                    <div className="text-xs text-[#7a9488]">Send to 317-868-4699 · Tap to copy number</div>
-                  </div>
-                  <span className="text-[#a0a89e] text-sm">⎘</span>
-                </button>
-
-                {/* Cash / Check */}
-                <div className="border rounded-2xl px-4 py-3.5" style={{ background: "#f7f4ef", borderColor: "#e0d9cf" }}>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-lg" style={{ background: "#e8e2da" }}>💵</div>
-                    <div className="font-bold text-[#111] text-sm">Cash or Check</div>
-                  </div>
-                  <div className="text-xs text-[#6a7e72] leading-relaxed pl-1">
-                    Leave payment at time of service, or mail a check payable to <span className="text-[#1a4a2e] font-semibold">Owen Scheidler</span> at 4729 N Banta Rd, Bargersville IN 46106.
-                    Include <span className="text-[#1a4a2e] font-semibold">{payModal.invoice_number}</span> in the memo line.
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="px-6 pb-6 pt-1 flex items-center justify-between">
-                <button onClick={() => setPayModal(null)} className="text-sm text-[#7a9488] hover:text-[#111] transition-colors">Cancel</button>
-                <button onClick={() => { setPaidInvoices(p => [...p, payModal.id]); setPayModal(null); }}
-                  className="text-xs text-[#5a8a6a] hover:text-[#1a4a2e] transition-colors border border-[#c8ddd0] hover:border-[#1a4a2e] px-3 py-2 rounded-xl">
-                  ✓ Mark as paid (I already sent it)
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "services" && (
-          <div>
-            <h1 className="text-2xl font-extrabold mb-1" style={{ color: "#1a1a1a" }}>Request a Service</h1>
-            <p className="text-sm mb-6" style={{ color: "#7a9488" }}>Schedule additional or one-time services</p>
-            <div className="grid md:grid-cols-2 gap-4">
-              {SERVICES.map(s => (
-                <Card key={s.id} light onClick={() => {}} className="cursor-pointer transition-all hover:-translate-y-0.5"
-                  onMouseEnter={e => e.currentTarget.style.borderColor = "#a3c9b0"}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = "#e0d9cf"}>
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-bold" style={{ color: "#1a1a1a" }}>{s.name}</h3>
-                    <span className="font-bold" style={{ color: "#1a4a2e" }}>from ${s.basePrice}</span>
-                  </div>
-                  <p className="text-sm mb-1" style={{ color: "#7a9488" }}>{s.description}</p>
-                  {s.note && <p className="text-xs mb-3" style={{ color: "#d97706" }}>⚠ {s.note}</p>}
-                  {!s.note && <div className="mb-3" />}
-                  <button className="text-xs px-4 py-2 rounded-lg transition-all font-medium"
-                    style={{ background: "#e6f2eb", color: "#1a4a2e" }}>
-                    Request This Service →
-                  </button>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {tab === "referral" && (
-          <div>
-            <h1 className="text-2xl font-extrabold mb-1" style={{ color: "#1a1a1a" }}>Refer a Friend</h1>
-            <p className="text-sm mb-6" style={{ color: "#7a9488" }}>Share your code and earn credits when they sign up</p>
-
-            {/* Rewards explanation */}
-            <Card light className="mb-5">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#e6f2eb" }}>
-                  <Icon name="dollar" size={20} color="#1a4a2e" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm" style={{ color: "#1a1a1a" }}>How Referral Credits Work</h3>
-                  <p className="text-xs mt-1" style={{ color: "#7a9488" }}>Share your code below. When your friend uses it to sign up or request an estimate, you'll get a credit on your account once they become a customer:</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl p-3 text-center" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf" }}>
-                  <div className="text-2xl font-black" style={{ color: "#1a4a2e" }}>$50</div>
-                  <div className="text-xs font-semibold mt-0.5" style={{ color: "#5a6e62" }}>Ongoing Mowing</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "#7a9488" }}>Weekly or biweekly</div>
-                </div>
-                <div className="rounded-xl p-3 text-center" style={{ background: "#f7f4ef", border: "1px solid #e0d9cf" }}>
-                  <div className="text-2xl font-black" style={{ color: "#1a4a2e" }}>$25</div>
-                  <div className="text-xs font-semibold mt-0.5" style={{ color: "#5a6e62" }}>One-Time Service</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "#7a9488" }}>Any single service</div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Referral code */}
-            <Card className="mb-5" style={{ background: "#e6f2eb", borderColor: "#a3c9b0" }}>
-              <div className="text-center py-4">
-                <Icon name="share" size={40} color="#1a4a2e" />
-                <h3 className="text-xl font-black mt-3 mb-1" style={{ color: "#1a1a1a" }}>Your Referral Code</h3>
-                <p className="text-sm mb-4" style={{ color: "#4a6358" }}>Have your friend enter this when they request an estimate or sign up</p>
-                <div className="flex items-center justify-center gap-3">
-                  <div className="px-6 py-3 rounded-xl font-mono text-lg font-bold tracking-widest"
-                    style={{ background: "white", border: "1px solid #c8ddd0", color: "#1a4a2e" }}>
-                    {customer.referral_code || customer.referralCode}
-                  </div>
-                  <button onClick={copyCode} className="px-4 py-3 rounded-xl text-sm font-semibold transition-all text-white"
-                    style={{ background: "#1a4a2e" }}>
-                    {copied ? "Copied!" : "Copy"}
-                  </button>
-                </div>
-              </div>
-            </Card>
-
-            {/* Share buttons */}
-            <Card light>
-              <h3 className="font-bold mb-3" style={{ color: "#1a1a1a" }}>Share With a Friend</h3>
-              <div className="flex flex-col gap-2">
-                <button onClick={() => {
-                  const code = customer.referral_code || customer.referralCode || "";
-                  const msg = `Hey! I use Owen's Lawn + Landscape for my yard and they're great. Use my referral code ${code} when you sign up at owenslawnandlandscapes.com and we both get a credit!`;
-                  if (navigator.share) { navigator.share({ title: "Owen's Lawn + Landscape", text: msg }); }
-                  else { navigator.clipboard?.writeText(msg); setCopied(true); setTimeout(() => setCopied(false), 2000); }
-                }} className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
-                  style={{ background: "#1a4a2e", color: "white" }}>
-                  <Icon name="share" size={14} color="white" /> Share via Text / App
-                </button>
-                <button onClick={() => {
-                  const code = customer.referral_code || customer.referralCode || "";
-                  const subject = encodeURIComponent("Check out Owen's Lawn + Landscape!");
-                  const body = encodeURIComponent(`Hey!\n\nI use Owen's Lawn + Landscape for my yard and they do a great job. If you need lawn care, use my referral code ${code} when you sign up at owenslawnandlandscapes.com — we both get a credit!\n\nCheck them out: https://owenslawnandlandscapes.com`);
-                  window.open(`mailto:?subject=${subject}&body=${body}`);
-                }} className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
-                  style={{ background: "#f7f4ef", border: "1px solid #e0d9cf", color: "#4a6358" }}>
-                  <Icon name="mail" size={14} /> Share via Email
-                </button>
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {tab === "feedback" && (
-          <div>
-            <h1 className="text-2xl font-extrabold mb-1" style={{ color: "#1a1a1a" }}>Leave Feedback</h1>
-            <p className="text-sm mb-6" style={{ color: "#7a9488" }}>Your feedback helps us improve</p>
-            {feedbackSent ? (
-              <Card light className="text-center py-12">
-                <Icon name="check" size={40} color="#1a4a2e" />
-                <h3 className="text-xl font-bold mt-3 mb-1" style={{ color: "#1a1a1a" }}>Thank You!</h3>
-                <p style={{ color: "#7a9488" }}>Your feedback means a lot to us.</p>
-              </Card>
-            ) : (
-              <Card light>
-                <div className="mb-5">
-                  <label className="block text-sm mb-2 font-medium" style={{ color: "#4a6358" }}>Overall Rating</label>
-                  <div className="flex gap-1">
-                    {[1,2,3,4,5].map(n => (
-                      <button key={n} onClick={() => setFeedbackRating(n)}>
-                        <Icon name="star" size={28} color={n <= feedbackRating ? "#f59e0b" : "#d5cfc7"} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="mb-5">
-                  <label className="block text-sm mb-2 font-medium" style={{ color: "#4a6358" }}>Your Comments</label>
-                  <textarea value={feedback} onChange={e => setFeedback(e.target.value)} rows={5}
-                    placeholder="Tell us about your recent service experience..."
-                    className="w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-colors resize-none"
-                    style={{ background: "white", border: "1px solid #c8ddd0", color: "#1a1a1a" }} />
-                </div>
-                <button onClick={() => setFeedbackSent(true)} className="px-6 py-3 rounded-xl font-bold transition-all text-white"
-                  style={{ background: "#1a4a2e" }}>
-                  Submit Feedback
-                </button>
-              </Card>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// SCHEDULE CHANGE REQUESTS (shared state)
-// ============================================================
-const scheduleChangeRequests = [
-  { id: 1, customer: "Ron Cooper", originalDate: "Mar 10, 2026", type: "reschedule", newDate: "Mar 12, 2026", note: "Please come Wednesday instead", status: "pending" },
-  { id: 2, customer: "Tara Roberts", originalDate: "Mar 12, 2026", type: "skip", newDate: null, note: "Traveling that week", status: "pending" },
-];
-
-// ============================================================
-// CRM TAB COMPONENT
-// ============================================================
 const CRMTab = ({ newLeads, convertLead, convertedLeadIds = [], customers = CUSTOMERS, onRefreshCustomers, onNavigateEstimator }) => {
   const [crmView, setCrmView] = useState("customers"); // customers | leads | lead-detail | messages | changes
   const [selectedCustomers, setSelectedCustomers] = useState(customers.map(c => c.id));
@@ -1839,10 +897,7 @@ As a returning customer, you've earned:
   ✅  1 FREE mow on us this season
   ✅  15% off any additional service (landscaping, treatments, etc.)
 
-👉 Tap below to instantly access your portal — no password needed:
-${magicLink(customer)}
-
-Log in to view your schedule, confirm your service day, or request changes. We'll confirm within 24 hours.
+👉 Just reply to this email (or text (317) 868-4699) to confirm your service day or request changes. We'll confirm within 24 hours.
 
 Thanks for another year — can't wait to get your yard looking great.
 
@@ -1851,7 +906,7 @@ Owen's Lawn + Landscape
 (317) 868-4699`;
 
   const seasonOpenText = (customer) =>
-`Hi ${customer.name.split(" ")[0]}! 👋 Owen here — 2026 season kicks off Mar 10. Returning customer perks: 1 FREE cut + 15% off any add-on! Log in to view your schedule and confirm: ${shortLink(customer)}`;
+`Hi ${customer.name.split(" ")[0]}! 👋 Owen here — 2026 season kicks off Mar 10. Returning customer perks: 1 FREE cut + 15% off any add-on! Reply YES to confirm your spot!`;
 
   const seasonCloseEmail = (customer) =>
 `Subject: Thanks for a Great 2025 Season — See You in 2026! 🍂
@@ -1865,10 +920,7 @@ Here's what's waiting for you in 2026:
   🎁  1 FREE mow + 15% off any add-on when you re-enroll before Jan 15
   💵  Refer a neighbor → earn a $25 credit on your first invoice
 
-👉 Re-enroll in 60 seconds — no password, just tap:
-${magicLink(customer)}
-
-Log in to view your details and confirm for next season.
+👉 Re-enrolling takes 10 seconds — just reply to this email to confirm for next season.
 
 Have a wonderful fall and winter — talk soon!
 
@@ -1877,7 +929,7 @@ Owen's Lawn + Landscape
 (317) 868-4699`;
 
   const seasonCloseText = (customer) =>
-`Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — thanks for a great 2025! Re-enroll before Jan 15: get 1 FREE cut + 15% off any add-on in 2026. Log in to confirm your spot: ${shortLink(customer)}`;
+`Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — thanks for a great 2025! Re-enroll before Jan 15: get 1 FREE cut + 15% off any add-on in 2026. Reply YES to save your spot!`;
 
   // ── Additional Campaign Templates ─────────────────────────
 
@@ -1893,15 +945,14 @@ I'm booking aeration for September/October. Slots fill up fast, so let me know i
   🌱  Core Aeration — $185 (up to 10,000 sq ft)
   🌱  Aeration + Overseeding — $250
 
-Reply to this email or tap your portal link to request:
-${magicLink(customer)}
+Reply to this email or text (317) 868-4699 to get on the schedule, and I'll send over a quick estimate you can approve online.
 
 — Owen
 Owen's Lawn + Landscape
 (317) 868-4699`;
 
   const fallAerationText = (customer) =>
-`Hi ${customer.name.split(" ")[0]}! 🌱 Owen here — fall aeration season is coming up. Core aeration $185, aeration + overseeding $250. Spots are limited. Reply or log in to book: ${shortLink(customer)}`;
+`Hi ${customer.name.split(" ")[0]}! 🌱 Owen here — fall aeration season is coming up. Core aeration $185, aeration + overseeding $250. Spots are limited. Reply to book!`;
 
   const fallCleanupEmail = (customer) =>
 `Subject: Fall Clean-Up — Get Your Yard Winter-Ready 🍂
@@ -1918,15 +969,14 @@ Our fall clean-up includes:
 
 Pricing starts at $150 depending on property size. I'm scheduling now through mid-November.
 
-Reply here or log in to your portal to request:
-${magicLink(customer)}
+Reply here or text (317) 868-4699 to get on the schedule.
 
 — Owen
 Owen's Lawn + Landscape
 (317) 868-4699`;
 
   const fallCleanupText = (customer) =>
-`Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — scheduling fall clean-ups now! Leaf removal, bed cleanup, final mow. Starting at $150. Reply to book or log in: ${shortLink(customer)}`;
+`Hi ${customer.name.split(" ")[0]}! 🍂 Owen here — scheduling fall clean-ups now! Leaf removal, bed cleanup, final mow. Starting at $150. Reply to book!`;
 
   const firewoodEmail = (customer) =>
 `Subject: Firewood Available — Seasoned Hardwood Delivery 🪵
@@ -2345,7 +1395,7 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-stone-800 bg-stone-900/80">
-                {["Customer", "Service", "Rate", "Frequency", "Route Day", "Magic Link", "Status"].map(h => (
+                {["Customer", "Service", "Rate", "Frequency", "Route Day", "Status"].map(h => (
                   <th key={h} className="text-left py-3 px-4 text-stone-500 text-xs uppercase tracking-wider font-semibold">{h}</th>
                 ))}
               </tr>
@@ -2390,16 +1440,6 @@ customTextBody || `Hi ${customer.name.split(" ")[0]}! Owen here — [ your messa
                     ) : (
                       <span className="text-stone-400 text-xs">{c.route_day || routeDay(c.id)}</span>
                     )}
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-[10px] text-emerald-500/80 bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-900/40 truncate max-w-[120px]">?token={c.token}</span>
-                      <button
-                        onClick={() => navigator.clipboard?.writeText(`${window.location.origin}?token=${c.token}`)}
-                        className="text-stone-600 hover:text-emerald-400 transition-colors shrink-0" title="Copy link">
-                        <Icon name="share" size={12} />
-                      </button>
-                    </div>
                   </td>
                   <td className="py-3 px-4">
                     {editingCustomerId === c.id ? (
@@ -4186,6 +3226,24 @@ const AdminPortal = ({ onLogout }) => {
   const [tab, setTab] = useState("dashboard");
   // Rules-based estimator (no AI): CRM leads can open it pre-filled
   const [estimatorPrefill, setEstimatorPrefill] = useState({ n: 0 });
+  const [estimatorSavedNav, setEstimatorSavedNav] = useState(0);
+
+  // ── Customer responses to online proposals (polls every minute) ──
+  const [responses, setResponses] = useState([]);
+  const seenKey = "oll_seen_proposal_responses";
+  const readSeen = () => { try { return localStorage.getItem(seenKey) || new Date(Date.now() - 7 * 864e5).toISOString(); } catch { return new Date(Date.now() - 7 * 864e5).toISOString(); } };
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => { const r = await db.fetchEstimateResponses(readSeen()); if (alive) setResponses(r || []); };
+    poll();
+    const t = setInterval(poll, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const dismissResponses = () => {
+    const latest = responses.reduce((m, r) => (r.decided_at > m ? r.decided_at : m), readSeen());
+    try { localStorage.setItem(seenKey, latest); } catch { /* storage unavailable */ }
+    setResponses([]);
+  };
   const [pricingSettings, setPricingSettings] = useState(null);
   useEffect(() => { db.fetchAppSetting("pricing").then(v => { if (v) setPricingSettings(v); }); }, []);
   const savePricingSettings = useCallback(async (next) => {
@@ -4435,6 +3493,7 @@ const AdminPortal = ({ onLogout }) => {
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${tab === t.id ? "bg-emerald-900/40 text-emerald-300" : "text-stone-400 hover:bg-stone-800 hover:text-stone-200"}`}>
               <Icon name={t.icon} size={16} color="currentColor" />
               {t.label}
+              {t.id === "estimator" && responses.length > 0 && <span className="ml-auto text-[10px] font-bold bg-emerald-600 text-white rounded-full px-1.5 py-0.5">{responses.length}</span>}
             </button>
           ))}
         </nav>
@@ -4447,6 +3506,22 @@ const AdminPortal = ({ onLogout }) => {
 
       {/* MAIN */}
       <div className="md:ml-64 flex-1 p-4 md:p-8 overflow-y-auto pt-16 md:pt-8">
+        {responses.length > 0 && (
+          <div className="mb-5 rounded-2xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[220px] space-y-1">
+              {responses.slice(0, 4).map(r => (
+                <div key={r.id} className="text-sm text-emerald-100">
+                  {r.status === "approved"
+                    ? <>✅ <b>{r.customer_name}</b> approved EST-{String(r.id).padStart(4, "0")} online: ${Number(r.approval_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}{Number(r.approval_recurring) ? ` + $${Number(r.approval_recurring).toFixed(2)}/visit` : ""}</>
+                    : <>✏️ <b>{r.customer_name}</b> requested changes on EST-{String(r.id).padStart(4, "0")}{r.customer_note ? `: "${r.customer_note.slice(0, 90)}"` : ""}</>}
+                </div>
+              ))}
+              {responses.length > 4 && <div className="text-xs text-emerald-300">+ {responses.length - 4} more</div>}
+            </div>
+            <button onClick={() => { setTab("estimator"); setEstimatorSavedNav(n => n + 1); dismissResponses(); }} className="text-sm font-semibold bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg">View estimates</button>
+            <button onClick={dismissResponses} className="text-sm text-emerald-300 hover:text-white px-2">Dismiss</button>
+          </div>
+        )}
 
         {/* DASHBOARD */}
         {tab === "dashboard" && (
@@ -4773,6 +3848,7 @@ const AdminPortal = ({ onLogout }) => {
             customers={customers}
             serviceVisits={serviceVisits}
             prefill={estimatorPrefill}
+            openSavedNav={estimatorSavedNav}
             onRefreshCustomers={refreshCustomers}
           />
         )}
@@ -5088,128 +4164,6 @@ const AdminPortal = ({ onLogout }) => {
 // ============================================================
 // MAGIC LINK LANDING — shown briefly while auto-logging in
 // ============================================================
-const MagicLinkLanding = ({ customer, onEnter }) => {
-  const [step, setStep] = useState(0); // 0=verifying, 1=confirmed
-
-  useEffect(() => {
-    const t1 = setTimeout(() => setStep(1), 900);
-    const t2 = setTimeout(() => onEnter(), 2000);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, []);
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "#f7f4ef", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif" }}>
-      <div className="text-center max-w-sm w-full">
-        <div className="flex items-center justify-center gap-3 mb-10">
-          <img src={BRAND_LOGO} alt="Owen's Lawn & Landscape" className="h-16 w-auto object-contain" />
-        </div>
-
-        {step === 0 && (
-          <div>
-            <div className="w-14 h-14 mx-auto mb-5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a4a2e", borderTopColor: "transparent" }} />
-            <p className="text-sm" style={{ color: "#7a9488" }}>Verifying your link…</p>
-          </div>
-        )}
-
-        {step === 1 && (
-          <div>
-            <div className="w-16 h-16 mx-auto mb-5 rounded-full flex items-center justify-center" style={{ background: "#e6f2eb" }}>
-              <Icon name="check" size={32} color="#1a4a2e" />
-            </div>
-            <h2 className="text-2xl font-extrabold mb-2" style={{ color: "#1a1a1a" }}>Welcome back, {customer.name.split(" ")[0]}!</h2>
-            <p className="text-sm" style={{ color: "#7a9488" }}>Taking you to your 2026 schedule…</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// SEND ME A LINK — passwordless fallback on login page
-// ============================================================
-const SendMeLinkModal = ({ onClose }) => {
-  const [input, setInput] = useState("");
-  const [sent, setSent] = useState(false);
-  const [notFound, setNotFound] = useState(false);
-
-  const handleSend = async () => {
-    // Look up by email or phone via Supabase (falls back to hardcoded list when offline)
-    let match = null;
-    if (isOnline()) {
-      // Yes/no check only; customer records are never sent to the browser here
-      const { data } = await supabase.rpc("portal_contact_exists", { p_contact: input.trim() });
-      match = data === true;
-    } else {
-      match = CUSTOMERS.find(c =>
-        c.email.toLowerCase() === input.toLowerCase() ||
-        c.phone.replace(/\D/g,"") === input.replace(/\D/g,"")
-      );
-    }
-    if (match) {
-      setSent(true);
-      setNotFound(false);
-    } else {
-      setNotFound(true);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
-      <div className="rounded-3xl p-8 max-w-sm w-full shadow-2xl" style={{ background: "white", border: "1px solid #e0d9cf", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif" }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-xl font-black" style={{ color: "#1a1a1a" }}>Get My Link</h3>
-          <button onClick={onClose} style={{ color: "#9aada6" }}><Icon name="x" size={20} /></button>
-        </div>
-
-        {!sent ? (
-          <>
-            <p className="text-sm mb-5 leading-relaxed" style={{ color: "#7a9488" }}>
-              Enter the email or phone number Owen has on file. We'll send you a one-tap login link — no password needed.
-            </p>
-            <input
-              value={input}
-              onChange={e => { setInput(e.target.value); setNotFound(false); }}
-              placeholder="Email or phone number"
-              className="w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-colors mb-3"
-              style={{ background: "white", border: "1px solid #c8ddd0", color: "#1a1a1a" }}
-            />
-            {notFound && (
-              <p className="text-xs mb-3" style={{ color: "#dc2626" }}>We couldn't find that email or phone. Try another, or call Owen at (317) 868-4699.</p>
-            )}
-            <button
-              onClick={handleSend}
-              disabled={!input.trim()}
-              className="w-full py-3 rounded-xl font-bold transition-all text-white disabled:opacity-40"
-              style={{ background: "#1a4a2e" }}
-            >
-              Send Me My Link
-            </button>
-          </>
-        ) : (
-          <div className="text-center py-4">
-            <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: "#e6f2eb" }}>
-              <Icon name="check" size={28} color="#1a4a2e" />
-            </div>
-            <h4 className="font-black text-lg mb-2" style={{ color: "#1a1a1a" }}>Link Sent!</h4>
-            <p className="text-sm leading-relaxed" style={{ color: "#7a9488" }}>
-              Check your email and texts — your one-tap link will arrive in under a minute. It's valid for 30 days.
-            </p>
-            <button onClick={onClose} className="mt-5 text-sm transition-colors" style={{ color: "#9aada6" }}>Close</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// ROOT APP — token detection & routing
-
-
-// ============================================================
-// ANNUAL PLANS PAGE
-// ============================================================
 const AnnualPlansPage = ({ onBack, onGetStarted }) => {
   const [selected, setSelected] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -5521,81 +4475,40 @@ const AnnualPlansPage = ({ onBack, onGetStarted }) => {
 };
 
 export default function App() {
+  // Public proposal links: /proposal/<token> (no login)
+  const proposalToken = (window.location.pathname.match(/^\/proposal\/([A-Za-z0-9]+)\/?$/) || [])[1];
+  if (proposalToken) return <ProposalPage token={proposalToken} />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const [view, setView] = useState("landing");
-  const [authedCustomer, setAuthedCustomer] = useState(null);
-  const [showSendLink, setShowSendLink] = useState(false);
 
   // Restore admin session on page refresh
   useEffect(() => {
     if (!isOnline()) return;
-    // Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setView("admin");
-      }
+      if (session?.user) setView("admin");
     });
-    // Listen for auth state changes (login/logout)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_OUT") {
-        setView("landing");
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") setView("landing");
     });
     return () => subscription?.unsubscribe();
   }, []);
 
-  // Check URL for magic link token on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    if (token) {
-      handleTokenLogin(token);
-    }
-  }, []);
-
-  const handleTokenLogin = async (token) => {
-    // Look up customer by token in Supabase (fall back to hardcoded data when offline)
-    let customer = null;
-    if (isOnline()) {
-      const { data } = await supabase.rpc("portal_customer", { p_token: token });
-      customer = data || null;
-    } else {
-      const customerId = MAGIC_TOKENS[token];
-      if (customerId) customer = CUSTOMERS.find(c => c.id === customerId);
-    }
-    if (customer) {
-      setAuthedCustomer(customer);
-      setView("magic-landing");
-    }
-  };
-
   return (
     <div>
-      {showSendLink && <SendMeLinkModal onClose={() => setShowSendLink(false)} />}
-
       {view === "landing" && (
-        <>
-          <LandingPage
-            onPortalLogin={(type) => setView(type === "admin" ? "adminLogin" : "customerLogin")}
-            onAnnualPlans={() => setView("annual-plans")}
-          />
-        </>
+        <LandingPage
+          onPortalLogin={() => setView("adminLogin")}
+          onAnnualPlans={() => setView("annual-plans")}
+        />
       )}
       {view === "annual-plans" && (
         <AnnualPlansPage onBack={() => setView("landing")} />
       )}
-      {view === "customerLogin" && (
-        <>
-          <LoginPage
-            type="customer"
-            onLogin={() => { if (authedCustomer) setView("customer"); }}
-            onBack={() => setView("landing")}
-            onSignUp={() => setView("signup")}
-            onSendLink={() => setShowSendLink(true)}
-          />
-        </>
-      )}
       {view === "adminLogin" && (
-        <LoginPage type="admin" onLogin={async (email, pass) => {
+        <LoginPage onLogin={async (email, pass) => {
           if (isOnline()) {
             const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
             if (error) throw new Error(error.message);
@@ -5603,23 +4516,9 @@ export default function App() {
           setView("admin");
         }} onBack={() => setView("landing")} />
       )}
-      {view === "signup" && (
-        <SignUpForm onBack={() => setView("customerLogin")} />
-      )}
-      {view === "magic-landing" && authedCustomer && (
-        <MagicLinkLanding customer={authedCustomer} onEnter={() => setView("customer")} />
-      )}
-      {view === "customer" && (
-        <CustomerPortal
-          customer={authedCustomer}
-          onLogout={() => { setAuthedCustomer(null); setView("landing"); }}
-        />
-      )}
       {view === "admin" && (
         <AdminPortal onLogout={async () => { if (isOnline()) await supabase.auth.signOut(); setView("landing"); }} />
       )}
     </div>
   );
 }
-
-

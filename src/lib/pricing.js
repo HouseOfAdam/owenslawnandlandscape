@@ -342,13 +342,16 @@ export function estimateStats(estimates) {
   const stats = {};
   for (const e of estimates) {
     const lines = e.inputs?.lines || [];
+    const picked = Array.isArray(e.selection) ? e.selection : [];
     for (const l of lines) {
       const id = l.custom ? "custom" : l.serviceId;
       if (!id) continue;
       const s = (stats[id] ||= { sent: 0, accepted: 0, declined: 0, acceptedPrices: [] });
-      if (e.status === "sent" || e.status === "accepted" || e.status === "declined") s.sent += 1;
-      if (e.status === "accepted") { s.accepted += 1; if (l.unitPrice) s.acceptedPrices.push(l.unitPrice); }
-      if (e.status === "declined") s.declined += 1;
+      if (e.status === "sent" || e.status === "approved" || e.status === "declined") s.sent += 1;
+      // An optional item the customer left unchecked counts as declined for that service
+      const won = e.status === "approved" && (!l.optional || picked.includes(l.key));
+      if (won) { s.accepted += 1; if (l.unitPrice) s.acceptedPrices.push(l.unitPrice); }
+      else if (e.status === "declined" || e.status === "approved") s.declined += 1;
     }
   }
   for (const s of Object.values(stats)) {
