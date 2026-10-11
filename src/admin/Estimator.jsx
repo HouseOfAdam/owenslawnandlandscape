@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import * as db from "../lib/db";
 import {
-  UNITS, FREQUENCIES, mergePricing, priceEstimate, defaultQty, cuYards, calibrateMowing, estimateStats, pricingAdvice, visitsPerSeason,
+  UNITS, FREQUENCIES, SERVICE_GROUPS, mergePricing, priceEstimate, defaultQty, cuYards, calibrateMowing, estimateStats, pricingAdvice, visitsPerSeason,
+  effectiveRate, materialMarkupPct,
 } from "../lib/pricing";
 import { SERVICE_CATEGORIES, rollupBy, fmtMoney, fmtPct, fmtHours, marginTone } from "../lib/profitability";
 import { printEstimateV2, printEstimate } from "./printEstimate";
@@ -119,7 +120,7 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
   const setLine = (key, patch) => setEst((e) => ({ ...e, lines: e.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
   const removeLine = (key) => setEst((e) => ({ ...e, lines: e.lines.filter((l) => l.key !== key) }));
   const addService = (svc) => setEst((e) => ({ ...e, lines: [...e.lines, { key: uid(), serviceId: svc.id, qty: null, frequency: svc.defaultFreq, crew: 1 }] }));
-  const addCustom = () => setEst((e) => ({ ...e, lines: [...e.lines, { key: uid(), custom: true, description: "", hours: "", materials: "", frequency: "once", crew: 1 }] }));
+  const addCustom = () => setEst((e) => ({ ...e, lines: [...e.lines, { key: uid(), custom: true, description: "", hours: "", materials: "", tier: "mid", markupPct: null, frequency: "once", crew: 1 }] }));
   const depth = prop.mulchDepthIn === "" || prop.mulchDepthIn == null ? pricing.mulchDepthIn : prop.mulchDepthIn;
 
   // Lines with no typed quantity follow the property details automatically
@@ -148,7 +149,7 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
       return {
         key: l.key, serviceId: l.serviceId || null, custom: !!l.custom, description: est.lines.find((x) => x.key === l.key)?.description || "",
         qty: est.lines.find((x) => x.key === l.key)?.qty ?? null, frequency: l.frequency, crew: l.crew, priceOverride: l.priceOverride ?? null,
-        hours: l.hours ?? null, materials: l.materials ?? null,
+        hours: l.hours ?? null, materials: l.materials ?? null, tier: est.lines.find((x) => x.key === l.key)?.tier ?? null, markupPct: est.lines.find((x) => x.key === l.key)?.markupPct ?? null,
         detailsText: est.lines.find((x) => x.key === l.key)?.detailsText ?? null, visitsOverride: est.lines.find((x) => x.key === l.key)?.visitsOverride ?? null,
         // snapshot for history + learning
         price: l.price, autoPrice: l.autoPrice, unitPrice: units > 0 ? Math.round((l.price / units) * 100) / 100 : null, personMin: l.personMin, cost: l.cost, visits: l.visits,
@@ -255,13 +256,7 @@ function Builder({ est, setEst, pricing, costingInputs, costing, customers, hist
                 target={target} history={l.svc ? history[l.svc.category] : null} stats={stats[l.custom ? "custom" : l.serviceId]} />
             ))}
           </div>
-          <div className="text-[11px] text-stone-500 uppercase tracking-wider font-semibold mb-2">Add a service</div>
-          <div className="flex flex-wrap gap-2">
-            {pricing.services.map((s) => (
-              <button key={s.id} onClick={() => addService(s)} className="text-xs bg-stone-800 hover:bg-emerald-900/50 hover:border-emerald-700 border border-stone-700 rounded-lg px-3 py-2 text-stone-200">+ {s.name}</button>
-            ))}
-            <button onClick={addCustom} className="text-xs bg-stone-800 hover:bg-stone-700 border border-dashed border-stone-600 rounded-lg px-3 py-2 text-stone-300">+ Custom / landscape job</button>
-          </div>
+          <ServicePicker pricing={pricing} onAdd={addService} onAddCustom={addCustom} />
         </Panel>
 
         <Panel>
@@ -340,6 +335,55 @@ const MiniStat = ({ l, v, sub, tone = "text-stone-100" }) => (
   </div>
 );
 
+function rateSummary(svc, pricing) {
+  const r = effectiveRate(svc, pricing);
+  const tier = svc.rateTier ? pricing.laborTiers?.[svc.rateTier] : null;
+  const parts = [];
+  if (svc.unit === "material") parts.push(`material × ${r}`);
+  else if (svc.mode === "time") parts.push(`${fmtMoney(svc.base)} + time × ${fmtMoney(r)}/hr${tier ? ` (${tier.label.split(" (")[0].toLowerCase()})` : ""}`);
+  else if (svc.unit === "flat") parts.push(`${fmtMoney(svc.rate)} flat`);
+  else if (svc.unit === "per_hour") parts.push(`${fmtMoney(r)}/hr${tier ? ` (${tier.label.split(" (")[0].toLowerCase()})` : ""}`);
+  else {
+    if (svc.base) parts.push(`${fmtMoney(svc.base)}${svc.includedUnits ? ` incl. first ${svc.includedUnits} ${UNITS[svc.unit].unitWord.replace(/^1,000 /, "×1,000 ")}` : ""}`);
+    parts.push(`${fmtMoney(r, { cents: true })} ${UNITS[svc.unit].label}${svc.includedUnits ? " after that" : ""}`);
+  }
+  const minimum = Math.max(Number(svc.min) || 0, (Number(svc.minHours) || 0) * (svc.unit === "per_hour" ? r : 0));
+  if (minimum) parts.push(`min ${fmtMoney(minimum)}`);
+  return parts.join(" + ").replace(" + min", " · min");
+}
+
+function ServicePicker({ pricing, onAdd, onAddCustom }) {
+  const [q, setQ] = useState("");
+  const [group, setGroup] = useState("Mowing & Lawn");
+  const groups = SERVICE_GROUPS.filter((g) => pricing.services.some((s) => (s.group || "Other") === g));
+  const t = q.trim().toLowerCase();
+  const list = t ? pricing.services.filter((s) => `${s.name} ${s.group} ${s.category}`.toLowerCase().includes(t)) : pricing.services.filter((s) => (s.group || "Other") === group);
+  return (
+    <div className="border-t border-stone-800 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="text-[11px] text-stone-500 uppercase tracking-wider font-semibold">Add a service</div>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search services…" className={`${inputCls} py-1.5 w-56`} />
+      </div>
+      {!t && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {groups.map((g) => (
+            <button key={g} onClick={() => setGroup(g)} className={`text-[11px] px-2.5 py-1 rounded-full border font-semibold ${group === g ? "bg-emerald-900/50 border-emerald-700/50 text-emerald-300" : "bg-stone-900 border-stone-700 text-stone-400 hover:text-stone-200"}`}>{g}</button>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {list.map((s) => (
+          <button key={s.id} onClick={() => onAdd(s)} title={s.guide || ""} className="text-xs bg-stone-800 hover:bg-emerald-900/50 hover:border-emerald-700 border border-stone-700 rounded-lg px-3 py-2 text-left text-stone-200">
+            + {s.name}<span className="block text-[10px] text-stone-500">{rateSummary(s, pricing)}</span>
+          </button>
+        ))}
+        {list.length === 0 && <span className="text-xs text-stone-500">No services match.</span>}
+        <button onClick={onAddCustom} className="text-xs bg-stone-800 hover:bg-stone-700 border border-dashed border-stone-600 rounded-lg px-3 py-2 text-stone-300">+ Custom job (labor hours + materials)<span className="block text-[10px] text-stone-500">labor tier rate + tiered material markup</span></button>
+      </div>
+    </div>
+  );
+}
+
 function LineEditor({ line: l, raw, pricing, setLine, removeLine, target, history, stats }) {
   const svc = l.svc;
   const unit = svc ? UNITS[svc.unit] : null;
@@ -352,7 +396,7 @@ function LineEditor({ line: l, raw, pricing, setLine, removeLine, target, histor
           <input value={raw.description || ""} onChange={(e) => setLine(l.key, { description: e.target.value })}
             placeholder={l.custom ? "Describe the job (e.g. paver patio 12×14)" : (svc?.name || "Service")}
             className={`${inputCls} w-full font-semibold`} title="Name shown on the estimate" />
-          {!l.custom && svc && <div className="text-[11px] text-stone-500 mt-0.5">{svc.base ? `${fmtMoney(svc.base)} + ` : ""}{fmtMoney(svc.price, { cents: true })} {unit?.label}{svc.min ? ` · min ${fmtMoney(svc.min)}` : ""}{l.modPct ? ` · +${l.modPct}% conditions` : ""}</div>}
+          {!l.custom && svc && <div className="text-[11px] text-stone-500 mt-0.5">{rateSummary(svc, pricing)}{l.modPct ? ` · +${l.modPct}% conditions` : ""}{svc.guide ? <span className="text-stone-600"> · guide: {svc.guide}</span> : null}</div>}
         </div>
         <div className="text-right">
           <div className="text-lg font-black text-emerald-400">{fmtMoney(l.price, { cents: true })}</div>
@@ -362,12 +406,17 @@ function LineEditor({ line: l, raw, pricing, setLine, removeLine, target, histor
       <div className="flex flex-wrap items-end gap-2">
         {l.custom ? (
           <>
-            <Field lbl="Labor (person-hrs)"><input type="number" min="0" step="0.5" value={raw.hours ?? ""} onChange={(e) => setLine(l.key, { hours: e.target.value })} className={`${inputCls} w-28`} /></Field>
-            <Field lbl="Materials cost ($)"><input type="number" min="0" step="1" value={raw.materials ?? ""} onChange={(e) => setLine(l.key, { materials: e.target.value })} className={`${inputCls} w-28`} /></Field>
-            <div className="text-[11px] text-stone-500 pb-2">{fmtMoney(pricing.customLaborRate)}/hr labor + materials × {1 + pricing.materialsMarkup / 100}</div>
+            <Field lbl="Labor type">
+              <select value={raw.tier || "mid"} onChange={(e) => setLine(l.key, { tier: e.target.value })} className={inputCls}>
+                {Object.entries(pricing.laborTiers).map(([k, t]) => <option key={k} value={k}>{t.label.split(" (")[0]} · {fmtMoney(t.rate)}/hr</option>)}
+              </select>
+            </Field>
+            <Field lbl="Labor (person-hrs)"><input type="number" min="0" step="0.5" value={raw.hours ?? ""} onChange={(e) => setLine(l.key, { hours: e.target.value })} className={`${inputCls} w-24`} /></Field>
+            <Field lbl="Your material cost ($)"><input type="number" min="0" step="1" value={raw.materials ?? ""} onChange={(e) => setLine(l.key, { materials: e.target.value })} className={`${inputCls} w-28`} /></Field>
+            <Field lbl="Markup %"><input type="number" min="0" step="1" value={raw.markupPct ?? ""} placeholder={String(materialMarkupPct(pricing, Number(raw.materials) || 0))} onChange={(e) => setLine(l.key, { markupPct: e.target.value === "" ? null : e.target.value })} className={`${inputCls} w-20`} /></Field>
           </>
         ) : svc && svc.unit !== "flat" ? (
-          <Field lbl={`Quantity (${svc.unit === "per_item" ? svc.itemLabel || "items" : unit.qtyLabel})`}>
+          <Field lbl={svc.unit === "material" ? (svc.itemLabel ? `Your cost (${svc.itemLabel})` : "Your material cost ($)") : `Quantity (${svc.unit === "per_item" ? svc.itemLabel || "items" : unit.qtyLabel})`}>
             <div className="flex items-center gap-1">
               <input type="number" min="0" step="any" value={qtyIsAuto ? "" : raw.qty} placeholder={qtyIsAuto ? String(l.qty || 0) : ""} onChange={(e) => setLine(l.key, { qty: e.target.value })} className={`${inputCls} w-28`} />
               {qtyIsAuto && Number(l.qty) > 0 && <span className="text-[10px] text-stone-500">auto</span>}
@@ -501,12 +550,11 @@ function PricingSettings({ pricing, onSave, customers, serviceVisits, history, s
   const setMod = (id, patch) => setP((x) => ({ ...x, modifiers: x.modifiers.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
   const num = (v) => (v === "" ? "" : Number(v));
   const mow = useMemo(() => calibrateMowing(customers, serviceVisits), [customers, serviceVisits]);
-  const mowSvc = p.services.find((s) => s.id === "mowing");
   const target = costing.settings.targetHourly;
 
   const addService = () => {
     const id = `svc_${Math.random().toString(36).slice(2, 7)}`;
-    setP((x) => ({ ...x, services: [...x.services, { id, name: "New service", category: "Other", unit: "per_1000_sqft", qtySource: "lawn", base: 0, price: 5, min: 50, production: 10, setupMin: 5, materialCost: 0, defaultFreq: "once", usesModifiers: false }] }));
+    setP((x) => ({ ...x, services: [...x.services, { id, group: "Other", name: "New service", category: "Other", unit: "per_item", mode: "rate", qtySource: "manual", base: 0, rate: 50, includedUnits: 0, min: 0, minHours: 0, rateTier: "", production: 1, setupMin: 0, materialCost: 0, materialMultiplier: 0, defaultFreq: "once", usesModifiers: false, itemLabel: "", guide: "" }] }));
   };
   const save = async () => { setBusy(true); await onSave({ ...p, version: (Number(pricing.version) || 1) + 1 }); setBusy(false); };
 
@@ -523,58 +571,61 @@ function PricingSettings({ pricing, onSave, customers, serviceVisits, history, s
 
       <Panel>
         <h3 className="font-bold mb-1">Services & rates</h3>
-        <p className="text-xs text-stone-500 mb-4">Price = base fee + rate × quantity (never below the minimum), plus condition adjustments where enabled. Speed is how much one person completes per hour, which drives time, labor cost and $/hour.</p>
+        <p className="text-xs text-stone-500 mb-4">Loaded from {p.source || "your pricing guide"}; ranges use the midpoint, so adjust to taste. Speed (how much one person completes per hour) drives time, labor cost and $/hour; for mowing it also drives the price.</p>
         <div className="space-y-3">
-          {p.services.map((s) => {
-            const unit = UNITS[s.unit] || UNITS.flat;
-            const h = history[s.category];
-            const st = stats[s.id];
-            const advice = pricingAdvice(s, h, st, target);
+          {SERVICE_GROUPS.filter((g) => p.services.some((s) => (s.group || "Other") === g)).map((g) => {
+            const items = p.services.filter((s) => (s.group || "Other") === g);
             return (
-              <div key={s.id} className="border border-stone-800 rounded-xl p-3">
-                <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-end">
-                  <div className="col-span-2 md:col-span-4"><Field lbl="Service name"><input value={s.name} onChange={(e) => setSvc(s.id, { name: e.target.value })} className={`${cell} font-semibold`} /></Field></div>
-                  <div className="md:col-span-3"><Field lbl="Job category (for history)">
-                    <select value={s.category} onChange={(e) => setSvc(s.id, { category: e.target.value })} className={cell}>{SERVICE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
-                  </Field></div>
-                  <div className="md:col-span-3"><Field lbl="Priced">
-                    <select value={s.unit} onChange={(e) => setSvc(s.id, { unit: e.target.value, qtySource: e.target.value === "per_1000_sqft" ? "lawn" : e.target.value === "per_cu_yd" ? "beds" : "manual" })} className={cell}>
-                      {Object.entries(UNITS).map(([k, u]) => <option key={k} value={k}>{u.label}</option>)}
-                    </select>
-                  </Field></div>
-                  <div className="col-span-2 md:col-span-2"><Field lbl="Default frequency">
-                    <select value={s.defaultFreq} onChange={(e) => setSvc(s.id, { defaultFreq: e.target.value })} className={cell}>{FREQUENCIES.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select>
-                  </Field></div>
+              <details key={g} className="border border-stone-800 rounded-xl" open={g === "Mowing & Lawn"}>
+                <summary className="cursor-pointer select-none px-4 py-3 font-semibold text-stone-200 flex items-center justify-between">
+                  <span>{g}</span><span className="text-xs text-stone-500 font-normal">{items.length} service{items.length === 1 ? "" : "s"}</span>
+                </summary>
+                <div className="px-3 pb-3 space-y-3">
+                  {items.map((s) => (
+                    <ServiceCard key={s.id} s={s} p={p} setSvc={setSvc} setP={setP} history={history} stats={stats} target={target} mow={mow} />
+                  ))}
                 </div>
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-2 items-end mt-2">
-                  <Field lbl="Base fee $"><input type="number" step="0.5" value={s.base} onChange={(e) => setSvc(s.id, { base: num(e.target.value) })} className={cell} /></Field>
-                  <Field lbl={`Rate $ / ${unit.unitWord}`}><input type="number" step="0.05" value={s.price} onChange={(e) => setSvc(s.id, { price: num(e.target.value) })} className={cell} /></Field>
-                  <Field lbl="Minimum $"><input type="number" step="1" value={s.min} onChange={(e) => setSvc(s.id, { min: num(e.target.value) })} className={cell} /></Field>
-                  <Field lbl={`Speed: ${unit.unitWord}s / person-hr`}><input type="number" step="0.1" value={s.production} onChange={(e) => setSvc(s.id, { production: num(e.target.value) })} className={cell} /></Field>
-                  <Field lbl="Setup / travel min"><input type="number" step="1" value={s.setupMin} onChange={(e) => setSvc(s.id, { setupMin: num(e.target.value) })} className={cell} /></Field>
-                  <Field lbl={`Material $ / ${unit.unitWord}`}><input type="number" step="0.1" value={s.materialCost} onChange={(e) => setSvc(s.id, { materialCost: num(e.target.value) })} className={cell} /></Field>
-                </div>
-                <div className="flex flex-wrap items-center gap-4 mt-2 text-xs">
-                  {s.unit === "per_item" && <label className="flex items-center gap-1.5 text-stone-400">Item name <input value={s.itemLabel || ""} onChange={(e) => setSvc(s.id, { itemLabel: e.target.value })} placeholder="shrubs" className={`${inputCls} py-1 px-2 w-24`} /></label>}
-                  <label className="flex items-center gap-1.5 text-stone-400 cursor-pointer"><input type="checkbox" checked={!!s.usesModifiers} onChange={(e) => setSvc(s.id, { usesModifiers: e.target.checked })} className="accent-emerald-600" /> Apply condition adjustments</label>
-                  <span className="text-stone-500">{h ? `History: ${h.jobs} jobs · ${h.revPerPersonHour ? `${fmtMoney(h.revPerPersonHour)}/person-hr` : "no time logged"}` : "No completed jobs in this category yet"}{st && (st.accepted + st.declined) ? ` · ${st.accepted}/${st.accepted + st.declined} estimates won` : ""}</span>
-                  <button onClick={() => { if (window.confirm(`Remove "${s.name}" from the catalog?`)) setP((x) => ({ ...x, services: x.services.filter((y) => y.id !== s.id) })); }} className="ml-auto text-stone-600 hover:text-red-400">Remove</button>
-                </div>
-                {advice.map((a, i) => <div key={i} className={`mt-2 text-[11px] rounded-lg px-2.5 py-1.5 ${a.tone === "amber" ? "bg-amber-950/40 text-amber-200" : a.tone === "green" ? "bg-emerald-950/40 text-emerald-300" : "bg-stone-800/60 text-stone-400"}`}>📈 {a.text}</div>)}
-                {s.id === "mowing" && (
-                  <div className="mt-2 text-[11px] rounded-lg px-2.5 py-1.5 bg-blue-950/40 text-blue-200">
-                    {mow.sqftPerHour
-                      ? <>Your logged mowing times say <strong>{mow.sqftPerHour.toLocaleString()} sq ft per person-hour</strong> ({mow.n} visits, {mow.customers} customers). Settings use {(Number(mowSvc?.production || 0) * 1000).toLocaleString()}.{" "}
-                          <button onClick={() => setSvc("mowing", { production: Math.round(mow.sqftPerHour / 100) / 10 })} className="underline font-semibold">Use my actual speed</button></>
-                      : <>Mowing speed calibration needs lawn sizes. Add them below (accepted estimates fill them in automatically) and keep logging time. {mow.n} usable visits so far, 3 needed.</>}
-                  </div>
-                )}
-              </div>
+              </details>
             );
           })}
         </div>
         <button onClick={addService} className={`${btnGhost} mt-3`}>+ Add a service</button>
       </Panel>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        <Panel>
+          <h3 className="font-bold mb-1">Labor rates</h3>
+          <p className="text-xs text-stone-500 mb-3">Services billed "at labor rate" and custom jobs use these. Your guide's range is shown for reference.</p>
+          <div className="space-y-2">
+            {Object.entries(p.laborTiers).map(([k, t]) => (
+              <div key={k} className="flex items-center gap-2">
+                <span className="flex-1 text-sm text-stone-300">{t.label}<span className="block text-[11px] text-stone-500">guide {t.guide}</span></span>
+                <span className="text-stone-500 text-sm">$</span>
+                <input type="number" value={t.rate} onChange={(e) => setP((x) => ({ ...x, laborTiers: { ...x.laborTiers, [k]: { ...t, rate: num(e.target.value) } } }))} className={`${inputCls} w-24 py-1.5`} />
+                <span className="text-stone-500 text-sm">/hr</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel>
+          <h3 className="font-bold mb-1">Material markup (custom jobs)</h3>
+          <p className="text-xs text-stone-500 mb-3">Applied to your total material cost on custom-job lines. You can override it per line.</p>
+          <div className="space-y-2">
+            {p.materialMarkupTiers.map((t, i) => {
+              const prev = i ? p.materialMarkupTiers[i - 1].upTo : 0;
+              const setTier = (patch) => setP((x) => ({ ...x, materialMarkupTiers: x.materialMarkupTiers.map((y, j) => (j === i ? { ...y, ...patch } : y)) }));
+              return (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className="text-stone-400 w-44">{t.upTo === null ? `Over ${fmtMoney(prev)}` : i === 0 ? "Under" : `${fmtMoney(prev)} to`}</span>
+                  {t.upTo !== null && <><span className="text-stone-500">$</span><input type="number" value={t.upTo} onChange={(e) => setTier({ upTo: num(e.target.value) })} className={`${inputCls} w-24 py-1.5`} /></>}
+                  <span className="text-stone-500 ml-auto">markup</span>
+                  <input type="number" value={t.pct} onChange={(e) => setTier({ pct: num(e.target.value) })} className={`${inputCls} w-20 py-1.5`} /><span className="text-stone-500">%</span>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      </div>
 
       <div className="grid lg:grid-cols-2 gap-5">
         <Panel>
@@ -591,14 +642,12 @@ function PricingSettings({ pricing, onSave, customers, serviceVisits, history, s
           <button onClick={() => setP((x) => ({ ...x, modifiers: [...x.modifiers, { id: `m_${Math.random().toString(36).slice(2, 7)}`, label: "New condition", pct: 10 }] }))} className="text-xs text-emerald-500 mt-3">+ Add condition</button>
         </Panel>
         <Panel>
-          <h3 className="font-bold mb-3">Season & custom work</h3>
+          <h3 className="font-bold mb-3">Season & estimate defaults</h3>
           <div className="grid grid-cols-2 gap-3">
             <Field lbl="Weekly visits / season"><input type="number" value={p.season.weekly} onChange={(e) => setP((x) => ({ ...x, season: { ...x.season, weekly: num(e.target.value) } }))} className={cell} /></Field>
             <Field lbl="Every-2-weeks visits"><input type="number" value={p.season.biweekly} onChange={(e) => setP((x) => ({ ...x, season: { ...x.season, biweekly: num(e.target.value) } }))} className={cell} /></Field>
             <Field lbl="Monthly visits / season"><input type="number" value={p.season.monthly} onChange={(e) => setP((x) => ({ ...x, season: { ...x.season, monthly: num(e.target.value) } }))} className={cell} /></Field>
             <Field lbl="Season length (months)"><input type="number" value={p.season.months} onChange={(e) => setP((x) => ({ ...x, season: { ...x.season, months: num(e.target.value) } }))} className={cell} /></Field>
-            <Field lbl="Custom work $ / person-hr"><input type="number" value={p.customLaborRate} onChange={(e) => setP((x) => ({ ...x, customLaborRate: num(e.target.value) }))} className={cell} /></Field>
-            <Field lbl="Materials markup %"><input type="number" value={p.materialsMarkup} onChange={(e) => setP((x) => ({ ...x, materialsMarkup: num(e.target.value) }))} className={cell} /></Field>
             <Field lbl="Default mulch depth (in)"><input type="number" step="0.5" value={p.mulchDepthIn} onChange={(e) => setP((x) => ({ ...x, mulchDepthIn: num(e.target.value) }))} className={cell} /></Field>
           </div>
           <div className="mt-3"><Field lbl="Default terms printed on estimates">
@@ -608,6 +657,84 @@ function PricingSettings({ pricing, onSave, customers, serviceVisits, history, s
       </div>
 
       <LawnSizes customers={customers} onRefreshCustomers={onRefreshCustomers} />
+    </div>
+  );
+}
+
+function ServiceCard({ s, p, setSvc, setP, history, stats, target, mow }) {
+  const unit = UNITS[s.unit] || UNITS.flat;
+  const h = history[s.category];
+  const st = stats[s.id];
+  const advice = pricingAdvice(s, h, st, target);
+  const num = (v) => (v === "" ? "" : Number(v));
+  const cell = `${inputCls} w-full py-1.5 px-2`;
+  const isMat = s.unit === "material", isHour = s.unit === "per_hour", isFlat = s.unit === "flat", isTime = s.mode === "time";
+  const canTime = ["per_1000_sqft", "per_sqft", "per_cu_yd", "per_ft", "per_item"].includes(s.unit);
+  const tierSel = (
+    <Field lbl="Labor rate">
+      <select value={s.rateTier || ""} onChange={(e) => setSvc(s.id, { rateTier: e.target.value })} className={cell}>
+        <option value="">Use my own rate</option>
+        {Object.entries(p.laborTiers).map(([k, t]) => <option key={k} value={k}>{t.label.split(" (")[0]} ({fmtMoney(t.rate)}/hr)</option>)}
+      </select>
+    </Field>
+  );
+  return (
+    <div className="bg-stone-950/40 border border-stone-800 rounded-xl p-3">
+      <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-end">
+        <div className="col-span-2 md:col-span-4"><Field lbl="Service name"><input value={s.name} onChange={(e) => setSvc(s.id, { name: e.target.value })} className={`${cell} font-semibold`} /></Field></div>
+        <div className="md:col-span-2"><Field lbl="Section">
+          <select value={s.group || "Other"} onChange={(e) => setSvc(s.id, { group: e.target.value })} className={cell}>{SERVICE_GROUPS.map((g) => <option key={g}>{g}</option>)}</select>
+        </Field></div>
+        <div className="md:col-span-2"><Field lbl="Job category (history)">
+          <select value={s.category} onChange={(e) => setSvc(s.id, { category: e.target.value })} className={cell}>{SERVICE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
+        </Field></div>
+        <div className="md:col-span-2"><Field lbl="Priced">
+          <select value={s.unit} onChange={(e) => setSvc(s.id, { unit: e.target.value, mode: "rate", qtySource: e.target.value === "per_1000_sqft" ? "lawn" : e.target.value === "per_cu_yd" ? "beds" : "manual" })} className={cell}>
+            {Object.entries(UNITS).map(([k, u]) => <option key={k} value={k}>{u.label}</option>)}
+          </select>
+        </Field></div>
+        <div className="col-span-2 md:col-span-2"><Field lbl="Default frequency">
+          <select value={s.defaultFreq} onChange={(e) => setSvc(s.id, { defaultFreq: e.target.value })} className={cell}>{FREQUENCIES.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select>
+        </Field></div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end mt-2">
+        {isMat && <Field lbl="Multiplier on your cost"><input type="number" step="0.05" value={s.materialMultiplier} onChange={(e) => setSvc(s.id, { materialMultiplier: num(e.target.value) })} className={cell} /></Field>}
+        {isMat && <Field lbl="Quantity label (optional)"><input value={s.itemLabel || ""} onChange={(e) => setSvc(s.id, { itemLabel: e.target.value })} placeholder="material $" className={cell} /></Field>}
+        {isHour && tierSel}
+        {isHour && !s.rateTier && <Field lbl="Rate $ / hour"><input type="number" step="1" value={s.rate} onChange={(e) => setSvc(s.id, { rate: num(e.target.value) })} className={cell} /></Field>}
+        {isHour && <Field lbl="Minimum hours"><input type="number" step="0.25" value={s.minHours} onChange={(e) => setSvc(s.id, { minHours: num(e.target.value) })} className={cell} /></Field>}
+        {isFlat && <Field lbl="Flat price $"><input type="number" step="1" value={s.rate} onChange={(e) => setSvc(s.id, { rate: num(e.target.value) })} className={cell} /></Field>}
+        {canTime && <Field lbl="Pricing method">
+          <select value={s.mode || "rate"} onChange={(e) => setSvc(s.id, { mode: e.target.value, rateTier: e.target.value === "time" ? (s.rateTier || "mid") : s.rateTier })} className={cell}>
+            <option value="rate">Rate × quantity</option><option value="time">Time × labor rate</option>
+          </select>
+        </Field>}
+        {canTime && isTime && tierSel}
+        {canTime && <Field lbl={isTime ? "Flat fee per visit $" : "Base fee $"}><input type="number" step="0.5" value={s.base} onChange={(e) => setSvc(s.id, { base: num(e.target.value) })} className={cell} /></Field>}
+        {canTime && !isTime && <Field lbl={`Rate $ / ${unit.unitWord}`}><input type="number" step="0.05" value={s.rate} onChange={(e) => setSvc(s.id, { rate: num(e.target.value) })} className={cell} /></Field>}
+        {canTime && !isTime && <Field lbl={`Included in base (${unit.unitWord}s)`}><input type="number" step="1" value={s.includedUnits} onChange={(e) => setSvc(s.id, { includedUnits: num(e.target.value) })} className={cell} /></Field>}
+        {!isMat && <Field lbl="Minimum $"><input type="number" step="1" value={s.min} onChange={(e) => setSvc(s.id, { min: num(e.target.value) })} className={cell} /></Field>}
+        {s.unit === "per_item" && <Field lbl="Item name"><input value={s.itemLabel || ""} onChange={(e) => setSvc(s.id, { itemLabel: e.target.value })} placeholder="items" className={cell} /></Field>}
+        {canTime && <Field lbl={`Speed: ${unit.unitWord}s / person-hr`}><input type="number" step="0.05" value={s.production} onChange={(e) => setSvc(s.id, { production: num(e.target.value) })} className={cell} /></Field>}
+        {!isHour && <Field lbl="Setup / travel min"><input type="number" step="1" value={s.setupMin} onChange={(e) => setSvc(s.id, { setupMin: num(e.target.value) })} className={cell} /></Field>}
+        {(canTime || isFlat) && <Field lbl={`Your material cost $ / ${unit.unitWord}`}><input type="number" step="0.1" value={s.materialCost} onChange={(e) => setSvc(s.id, { materialCost: num(e.target.value) })} className={cell} /></Field>}
+      </div>
+      <div className="mt-2"><input value={s.guide || ""} onChange={(e) => setSvc(s.id, { guide: e.target.value })} placeholder="Pricing guide note (e.g. $40–$70 per yard)" className={`${inputCls} w-full text-xs py-1.5`} /></div>
+      <div className="flex flex-wrap items-center gap-4 mt-2 text-xs">
+        {!isMat && <label className="flex items-center gap-1.5 text-stone-400 cursor-pointer"><input type="checkbox" checked={!!s.usesModifiers} onChange={(e) => setSvc(s.id, { usesModifiers: e.target.checked })} className="accent-emerald-600" /> Apply condition adjustments</label>}
+        <span className="text-stone-500">Prices as: <span className="text-stone-300">{rateSummary(s, p)}</span></span>
+        <span className="text-stone-500">{h ? `History: ${h.jobs} jobs · ${h.revPerPersonHour ? `${fmtMoney(h.revPerPersonHour)}/person-hr` : "no time logged"}` : ""}{st && (st.accepted + st.declined) ? ` · ${st.accepted}/${st.accepted + st.declined} estimates won` : ""}</span>
+        <button onClick={() => { if (window.confirm(`Remove "${s.name}" from the catalog?`)) setP((x) => ({ ...x, services: x.services.filter((y) => y.id !== s.id) })); }} className="ml-auto text-stone-600 hover:text-red-400">Remove</button>
+      </div>
+      {advice.map((a, i) => <div key={i} className={`mt-2 text-[11px] rounded-lg px-2.5 py-1.5 ${a.tone === "amber" ? "bg-amber-950/40 text-amber-200" : a.tone === "green" ? "bg-emerald-950/40 text-emerald-300" : "bg-stone-800/60 text-stone-400"}`}>📈 {a.text}</div>)}
+      {s.id === "mowing" && (
+        <div className="mt-2 text-[11px] rounded-lg px-2.5 py-1.5 bg-blue-950/40 text-blue-200">
+          {mow.sqftPerHour
+            ? <>Your logged mowing times say <strong>{mow.sqftPerHour.toLocaleString()} sq ft per person-hour</strong> ({mow.n} visits, {mow.customers} customers). Settings use {(Number(s.production || 0) * 1000).toLocaleString()}.{" "}
+                <button onClick={() => setSvc("mowing", { production: Math.round(mow.sqftPerHour / 100) / 10 })} className="underline font-semibold">Use my actual speed</button></>
+            : <>Mowing price is time-based, so speed matters. Calibration needs lawn sizes: add them below (accepted estimates fill them in automatically) and keep logging time. {mow.n} usable visits so far, 3 needed.</>}
+        </div>
+      )}
     </div>
   );
 }
