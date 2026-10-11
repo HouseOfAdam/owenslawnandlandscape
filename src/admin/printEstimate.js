@@ -1,0 +1,81 @@
+// Branded, customer-facing estimate that opens in a new window for Print / Save as PDF.
+// Internal fields (profit margin, competitive notes, AI advice) are intentionally left off.
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const money = (v) => `$${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+export function printEstimate({ customer, service, frequency, area, basePrice, monthlyEstimate, annualEstimate, lineItems = [], date = new Date(), estimateNumber }) {
+  const logo = `${window.location.origin}/brand/oll-logo.png`;
+  const issued = new Date(date);
+  const validUntil = new Date(issued.getTime() + 30 * 86400000);
+  const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const num = estimateNumber || `EST-${issued.getFullYear()}${String(issued.getMonth() + 1).padStart(2, "0")}${String(issued.getDate()).padStart(2, "0")}-${Math.floor(Math.random() * 900 + 100)}`;
+  const recurring = frequency && !/one|once/i.test(frequency);
+  const cap = (t) => String(t || "").replace(/\b\w/g, (c) => c.toUpperCase());
+  service = cap(service); frequency = cap(frequency);
+  const rows = lineItems.map((it) => `<tr><td>${esc(it.description)}</td><td class="amount">${Number(it.amount) > 0 ? money(it.amount) : "Included"}</td></tr>`).join("");
+
+  const w = window.open("", "_blank", "width=820,height=1000");
+  if (!w) { alert("Please allow pop-ups to print the estimate."); return; }
+  w.document.write(`<!DOCTYPE html><html><head><title>Estimate ${esc(num)} · ${esc(customer || "")}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; color: #1a1a1a; padding: 40px; max-width: 800px; margin: 0 auto; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 36px; padding-bottom: 20px; border-bottom: 2px solid #1a4a2e; }
+    .brand-logo { height: 78px; width: auto; display: block; margin-bottom: 8px; }
+    .brand p { font-size: 11px; color: #666; margin-top: 2px; }
+    .doc { text-align: right; }
+    .doc h2 { font-size: 26px; font-weight: 900; color: #1a4a2e; letter-spacing: 1px; }
+    .doc p { font-size: 12px; color: #666; margin-top: 3px; }
+    .for { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+    .for h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; margin-bottom: 6px; font-weight: 700; }
+    .for p { font-size: 13px; color: #333; line-height: 1.6; }
+    .summary { display: flex; gap: 12px; margin-bottom: 26px; }
+    .box { flex: 1; background: #f4f8f5; border: 1px solid #dbe8df; border-radius: 10px; padding: 14px; text-align: center; }
+    .box .v { font-size: 22px; font-weight: 900; color: #1a4a2e; }
+    .box .l { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: #6a7e72; margin-top: 4px; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th { text-align: left; padding: 10px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #999; font-weight: 700; border-bottom: 2px solid #eee; }
+    td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    .amount { text-align: right; font-weight: 700; }
+    .terms { margin-top: 22px; padding: 16px; background: #f9f8f6; border-radius: 8px; font-size: 12px; color: #555; line-height: 1.7; }
+    .accept { margin-top: 34px; display: flex; gap: 40px; }
+    .accept div { flex: 1; border-top: 1px solid #999; padding-top: 6px; font-size: 11px; color: #777; }
+    .footer { margin-top: 30px; padding-top: 18px; border-top: 1px solid #eee; font-size: 11px; color: #999; text-align: center; }
+    .bar { text-align: center; margin-top: 24px; }
+    .bar button { background: #1a4a2e; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; }
+    @media print { body { padding: 20px; } .bar { display: none !important; } }
+  </style></head><body>
+    <div class="header">
+      <div class="brand">
+        <img src="${logo}" class="brand-logo" alt="Owen's Lawn &amp; Landscape" />
+        <p>4729 N Banta Rd, Bargersville, IN 46106 · (317) 868-4699</p>
+        <p>owen@owenslawnandlandscapes.com · owenslawnandlandscapes.com</p>
+      </div>
+      <div class="doc">
+        <h2>ESTIMATE</h2>
+        <p>${esc(num)}</p>
+        <p>Date: ${fmtDate(issued)}</p>
+        <p>Valid until: ${fmtDate(validUntil)}</p>
+      </div>
+    </div>
+    <div class="for">
+      <div><h3>Prepared for</h3><p><strong>${esc(customer || "Valued customer")}</strong></p></div>
+      <div style="text-align:right"><h3>Service</h3><p>${esc(service || "")}${frequency ? ` · ${esc(frequency)}` : ""}${area ? `<br/>Property: ~${Number(area).toLocaleString()} sq ft` : ""}</p></div>
+    </div>
+    <div class="summary">
+      <div class="box"><div class="v">${money(basePrice)}</div><div class="l">${recurring ? "Per visit" : "Project price"}</div></div>
+      ${recurring && monthlyEstimate ? `<div class="box"><div class="v">${money(monthlyEstimate)}</div><div class="l">Est. monthly</div></div>` : ""}
+      ${recurring && annualEstimate ? `<div class="box"><div class="v">${money(annualEstimate)}</div><div class="l">Est. season total</div></div>` : ""}
+    </div>
+    ${rows ? `<table><thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead><tbody>${rows}</tbody></table>` : ""}
+    <div class="terms">
+      <strong>Terms.</strong> This estimate is valid for 30 days. Final pricing may change if the scope or property conditions differ from what's described above.
+      Recurring services are billed per visit; invoices are due upon receipt. Payment accepted by Venmo, check, or cash.
+    </div>
+    <div class="accept"><div>Customer signature</div><div>Date</div></div>
+    <div class="footer">Thank you for considering Owen's Lawn &amp; Landscape!</div>
+    <div class="bar"><button onclick="window.print()">Print / Save as PDF</button></div>
+  </body></html>`);
+  w.document.close();
+}

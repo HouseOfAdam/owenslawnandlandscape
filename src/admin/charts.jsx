@@ -28,7 +28,7 @@ function useWidth() {
 
 // Round the axis to friendly steps ($1k, $2.5k, $5k…) with 4 gridlines
 function niceScale(v, ticks = 4) {
-  if (v <= 0) return { max: 100 * ticks, step: 100 };
+  if (v < 100) return { max: 100 * ticks, step: 100 };
   const raw = v / ticks;
   const pow = Math.pow(10, Math.floor(Math.log10(raw)));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((x) => x >= raw);
